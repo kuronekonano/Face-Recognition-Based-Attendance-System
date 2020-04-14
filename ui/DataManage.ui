@@ -6,172 +6,20 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>931</width>
-    <height>577</height>
+    <width>1442</width>
+    <height>878</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>OpenCV Face Recognition System - DataManage</string>
   </property>
-  <widget class="QGroupBox" name="dbManageGroupBox">
-   <property name="geometry">
-    <rect>
-     <x>580</x>
-     <y>10</y>
-     <width>341</width>
-     <height>551</height>
-    </rect>
-   </property>
-   <property name="title">
-    <string>数据管理</string>
-   </property>
-   <property name="alignment">
-    <set>Qt::AlignCenter</set>
-   </property>
-   <widget class="QGroupBox" name="dbStatusGroupBox">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>20</y>
-      <width>321</width>
-      <height>101</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>数据库状态</string>
-    </property>
-    <widget class="QWidget" name="layoutWidget_4">
-     <property name="geometry">
-      <rect>
-       <x>20</x>
-       <y>60</y>
-       <width>281</width>
-       <height>31</height>
-      </rect>
-     </property>
-     <layout class="QHBoxLayout" name="dbUserCountHorizontalLayout">
-      <item>
-       <widget class="QLabel" name="dbUserCountLabel">
-        <property name="text">
-         <string>数据库已存人脸样本数：</string>
-        </property>
-        <property name="alignment">
-         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLCDNumber" name="dbUserCountLcdNum">
-        <property name="segmentStyle">
-         <enum>QLCDNumber::Flat</enum>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-    <widget class="QPushButton" name="initDbButton">
-     <property name="geometry">
-      <rect>
-       <x>20</x>
-       <y>20</y>
-       <width>281</width>
-       <height>31</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>初始化数据库</string>
-     </property>
-    </widget>
-   </widget>
-   <widget class="QGroupBox" name="trainGroupBox">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>130</y>
-      <width>321</width>
-      <height>191</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>训练数据</string>
-    </property>
-    <widget class="QGroupBox" name="imgPreprocessGroupBox">
-     <property name="geometry">
-      <rect>
-       <x>20</x>
-       <y>20</y>
-       <width>281</width>
-       <height>121</height>
-      </rect>
-     </property>
-     <property name="title">
-      <string>图像预处理</string>
-     </property>
-     <widget class="QCheckBox" name="equalizeHistCheckBox">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>40</y>
-        <width>91</width>
-        <height>41</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>直方图均衡化</string>
-      </property>
-     </widget>
-    </widget>
-    <widget class="QPushButton" name="trainButton">
-     <property name="enabled">
-      <bool>false</bool>
-     </property>
-     <property name="geometry">
-      <rect>
-       <x>20</x>
-       <y>150</y>
-       <width>281</width>
-       <height>31</height>
-      </rect>
-     </property>
-     <property name="toolTip">
-      <string>数据库未完成初始化，请检查</string>
-     </property>
-     <property name="text">
-      <string>开始训练</string>
-     </property>
-    </widget>
-   </widget>
-   <widget class="QGroupBox" name="logGroupBox">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>330</y>
-      <width>321</width>
-      <height>211</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>系统日志</string>
-    </property>
-    <widget class="QTextEdit" name="logTextEdit">
-     <property name="geometry">
-      <rect>
-       <x>0</x>
-       <y>20</y>
-       <width>321</width>
-       <height>191</height>
-      </rect>
-     </property>
-    </widget>
-   </widget>
-  </widget>
   <widget class="QGroupBox" name="faceDbGroupBox">
    <property name="geometry">
     <rect>
      <x>10</x>
      <y>10</y>
-     <width>561</width>
-     <height>551</height>
+     <width>1421</width>
+     <height>861</height>
     </rect>
    </property>
    <property name="title">
@@ -183,9 +31,9 @@
    <widget class="QGroupBox" name="deleteUserGroupBox">
     <property name="geometry">
      <rect>
-      <x>0</x>
-      <y>380</y>
-      <width>561</width>
+      <x>10</x>
+      <y>680</y>
+      <width>831</width>
       <height>171</height>
      </rect>
     </property>
@@ -197,7 +45,7 @@
       <rect>
        <x>10</x>
        <y>20</y>
-       <width>241</width>
+       <width>411</width>
        <height>141</height>
       </rect>
      </property>
@@ -226,10 +74,10 @@
      <widget class="QWidget" name="layoutWidget">
       <property name="geometry">
        <rect>
-        <x>20</x>
-        <y>30</y>
-        <width>201</width>
-        <height>81</height>
+        <x>10</x>
+        <y>20</y>
+        <width>381</width>
+        <height>111</height>
        </rect>
       </property>
       <layout class="QVBoxLayout" name="verticalLayout">
@@ -259,9 +107,9 @@
     <widget class="QGroupBox" name="queryResultGroupBox">
      <property name="geometry">
       <rect>
-       <x>250</x>
+       <x>430</x>
        <y>20</y>
-       <width>301</width>
+       <width>381</width>
        <height>141</height>
       </rect>
      </property>
@@ -273,8 +121,8 @@
        <rect>
         <x>10</x>
         <y>20</y>
-        <width>281</width>
-        <height>76</height>
+        <width>361</width>
+        <height>81</height>
        </rect>
       </property>
       <layout class="QHBoxLayout" name="infoHorizontalLayout">
@@ -365,7 +213,7 @@
        <rect>
         <x>10</x>
         <y>110</y>
-        <width>281</width>
+        <width>361</width>
         <height>23</height>
        </rect>
       </property>
@@ -378,10 +226,10 @@
    <widget class="QGroupBox" name="dbVisualGroupBox">
     <property name="geometry">
      <rect>
-      <x>0</x>
+      <x>10</x>
       <y>20</y>
-      <width>561</width>
-      <height>351</height>
+      <width>1121</width>
+      <height>651</height>
      </rect>
     </property>
     <property name="title">
@@ -390,10 +238,10 @@
     <widget class="QTableWidget" name="tableWidget">
      <property name="geometry">
       <rect>
-       <x>0</x>
-       <y>0</y>
-       <width>561</width>
-       <height>321</height>
+       <x>10</x>
+       <y>10</y>
+       <width>1101</width>
+       <height>601</height>
       </rect>
      </property>
      <column>
@@ -418,6 +266,46 @@
      </column>
      <column>
       <property name="text">
+       <string>专业</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>年级</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>班级</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>性别</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>生源地</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>民族</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>最近签到时间</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>总签到次数</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
        <string>注册时间</string>
       </property>
      </column>
@@ -425,14 +313,169 @@
     <widget class="QLabel" name="tipLabel">
      <property name="geometry">
       <rect>
-       <x>280</x>
-       <y>320</y>
-       <width>271</width>
+       <x>300</x>
+       <y>610</y>
+       <width>381</width>
        <height>31</height>
       </rect>
      </property>
      <property name="text">
       <string>注：Face ID为 -1 说明该用户的人脸数据未被训练</string>
+     </property>
+    </widget>
+   </widget>
+   <widget class="QGroupBox" name="trainGroupBox">
+    <property name="geometry">
+     <rect>
+      <x>860</x>
+      <y>680</y>
+      <width>201</width>
+      <height>161</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>训练数据</string>
+    </property>
+    <widget class="QPushButton" name="trainButton">
+     <property name="enabled">
+      <bool>false</bool>
+     </property>
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>110</y>
+       <width>161</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="toolTip">
+      <string>数据库未完成初始化，请检查</string>
+     </property>
+     <property name="text">
+      <string>开始训练</string>
+     </property>
+    </widget>
+    <widget class="QGroupBox" name="imgPreprocessGroupBox">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>20</y>
+       <width>161</width>
+       <height>71</height>
+      </rect>
+     </property>
+     <property name="title">
+      <string>图像预处理</string>
+     </property>
+     <widget class="QCheckBox" name="equalizeHistCheckBox">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>20</y>
+        <width>131</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>直方图均衡化</string>
+      </property>
+     </widget>
+    </widget>
+   </widget>
+   <widget class="QGroupBox" name="dbManageGroupBox">
+    <property name="geometry">
+     <rect>
+      <x>1080</x>
+      <y>680</y>
+      <width>331</width>
+      <height>171</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>数据管理</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+    <widget class="QGroupBox" name="dbStatusGroupBox">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>20</y>
+       <width>311</width>
+       <height>141</height>
+      </rect>
+     </property>
+     <property name="title">
+      <string>数据库状态</string>
+     </property>
+     <widget class="QWidget" name="layoutWidget_4">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>90</y>
+        <width>281</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <layout class="QHBoxLayout" name="dbUserCountHorizontalLayout">
+       <item>
+        <widget class="QLabel" name="dbUserCountLabel">
+         <property name="text">
+          <string>数据库已存人脸样本数：</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLCDNumber" name="dbUserCountLcdNum">
+         <property name="segmentStyle">
+          <enum>QLCDNumber::Flat</enum>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QPushButton" name="initDbButton">
+      <property name="geometry">
+       <rect>
+        <x>80</x>
+        <y>40</y>
+        <width>131</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>初始化数据库</string>
+      </property>
+     </widget>
+    </widget>
+   </widget>
+   <widget class="QGroupBox" name="logGroupBox">
+    <property name="geometry">
+     <rect>
+      <x>1140</x>
+      <y>10</y>
+      <width>271</width>
+      <height>661</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>系统日志</string>
+    </property>
+    <widget class="QTextEdit" name="logTextEdit">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>20</y>
+       <width>251</width>
+       <height>621</height>
+      </rect>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
      </property>
     </widget>
    </widget>

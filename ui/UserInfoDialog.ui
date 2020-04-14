@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>425</width>
-    <height>300</height>
+    <width>593</width>
+    <height>613</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -18,8 +18,8 @@
     <rect>
      <x>120</x>
      <y>120</y>
-     <width>201</width>
-     <height>21</height>
+     <width>411</width>
+     <height>31</height>
     </rect>
    </property>
    <property name="toolTip">
@@ -38,21 +38,21 @@
   <widget class="QLabel" name="enNameLabel">
    <property name="geometry">
     <rect>
-     <x>50</x>
-     <y>164</y>
-     <width>61</width>
+     <x>60</x>
+     <y>170</y>
+     <width>51</width>
      <height>31</height>
     </rect>
    </property>
    <property name="text">
-    <string>汉语拼音：</string>
+    <string>英文名：</string>
    </property>
   </widget>
   <widget class="QLabel" name="stuIDLabel">
    <property name="geometry">
     <rect>
      <x>70</x>
-     <y>64</y>
+     <y>70</y>
      <width>41</width>
      <height>31</height>
     </rect>
@@ -64,8 +64,8 @@
   <widget class="QLabel" name="cnNameLabel">
    <property name="geometry">
     <rect>
-     <x>73</x>
-     <y>114</y>
+     <x>70</x>
+     <y>120</y>
      <width>41</width>
      <height>31</height>
     </rect>
@@ -77,8 +77,8 @@
   <widget class="QPushButton" name="okButton">
    <property name="geometry">
     <rect>
-     <x>140</x>
-     <y>214</y>
+     <x>220</x>
+     <y>530</y>
      <width>161</width>
      <height>31</height>
     </rect>
@@ -90,15 +90,15 @@
     </font>
    </property>
    <property name="text">
-    <string>填好了</string>
+    <string>保存</string>
    </property>
   </widget>
   <widget class="QLabel" name="msgLabel">
    <property name="geometry">
     <rect>
-     <x>80</x>
-     <y>254</y>
-     <width>281</width>
+     <x>140</x>
+     <y>570</y>
+     <width>321</width>
      <height>21</height>
     </rect>
    </property>
@@ -112,10 +112,10 @@
   <widget class="QLabel" name="tipLabel">
    <property name="geometry">
     <rect>
-     <x>100</x>
-     <y>24</y>
-     <width>241</width>
-     <height>16</height>
+     <x>70</x>
+     <y>20</y>
+     <width>451</width>
+     <height>31</height>
     </rect>
    </property>
    <property name="font">
@@ -125,7 +125,7 @@
     </font>
    </property>
    <property name="text">
-    <string>请填写你的个人信息</string>
+    <string>请填写学生个人信息</string>
    </property>
    <property name="alignment">
     <set>Qt::AlignCenter</set>
@@ -136,8 +136,8 @@
     <rect>
      <x>120</x>
      <y>170</y>
-     <width>201</width>
-     <height>21</height>
+     <width>411</width>
+     <height>31</height>
     </rect>
    </property>
    <property name="toolTip">
@@ -155,8 +155,8 @@
     <rect>
      <x>120</x>
      <y>70</y>
-     <width>201</width>
-     <height>21</height>
+     <width>411</width>
+     <height>31</height>
     </rect>
    </property>
    <property name="toolTip">
@@ -167,6 +167,201 @@
    </property>
    <property name="clearButtonEnabled">
     <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QLineEdit" name="GradeLineEdit">
+   <property name="geometry">
+    <rect>
+     <x>120</x>
+     <y>270</y>
+     <width>411</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="toolTip">
+    <string/>
+   </property>
+   <property name="placeholderText">
+    <string>请输入学生入学年份，仅限数字</string>
+   </property>
+   <property name="clearButtonEnabled">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QLabel" name="GradeLabel">
+   <property name="geometry">
+    <rect>
+     <x>40</x>
+     <y>270</y>
+     <width>71</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>入学年份：</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="ClassLabel">
+   <property name="geometry">
+    <rect>
+     <x>70</x>
+     <y>320</y>
+     <width>41</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>班级：</string>
+   </property>
+  </widget>
+  <widget class="QLineEdit" name="ClassLineEdit">
+   <property name="geometry">
+    <rect>
+     <x>120</x>
+     <y>320</y>
+     <width>411</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="toolTip">
+    <string/>
+   </property>
+   <property name="placeholderText">
+    <string>请输入学生班级</string>
+   </property>
+   <property name="clearButtonEnabled">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QLineEdit" name="MajorLineEdit">
+   <property name="geometry">
+    <rect>
+     <x>120</x>
+     <y>220</y>
+     <width>411</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="toolTip">
+    <string/>
+   </property>
+   <property name="placeholderText">
+    <string>请输入学生专业，仅限汉字</string>
+   </property>
+   <property name="clearButtonEnabled">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QLabel" name="MajorLabel">
+   <property name="geometry">
+    <rect>
+     <x>70</x>
+     <y>220</y>
+     <width>41</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>专业：</string>
+   </property>
+  </widget>
+  <widget class="QLineEdit" name="SexLineEdit">
+   <property name="geometry">
+    <rect>
+     <x>120</x>
+     <y>370</y>
+     <width>411</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="toolTip">
+    <string/>
+   </property>
+   <property name="placeholderText">
+    <string>请输入学生性别，仅限1个汉字</string>
+   </property>
+   <property name="clearButtonEnabled">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QLabel" name="SexLabel">
+   <property name="geometry">
+    <rect>
+     <x>70</x>
+     <y>370</y>
+     <width>41</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>性别：</string>
+   </property>
+  </widget>
+  <widget class="QLineEdit" name="ProvinceLineEdit">
+   <property name="geometry">
+    <rect>
+     <x>120</x>
+     <y>420</y>
+     <width>411</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="toolTip">
+    <string/>
+   </property>
+   <property name="placeholderText">
+    <string>请输入学生生源地，仅限汉字</string>
+   </property>
+   <property name="clearButtonEnabled">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QLabel" name="ProvinceLabel">
+   <property name="geometry">
+    <rect>
+     <x>60</x>
+     <y>420</y>
+     <width>51</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>生源地：</string>
+   </property>
+  </widget>
+  <widget class="QLineEdit" name="NationLineEdit">
+   <property name="geometry">
+    <rect>
+     <x>120</x>
+     <y>470</y>
+     <width>411</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="toolTip">
+    <string/>
+   </property>
+   <property name="alignment">
+    <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+   </property>
+   <property name="placeholderText">
+    <string>请输入你的民族，10个汉字以内</string>
+   </property>
+   <property name="clearButtonEnabled">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QLabel" name="NationLabel">
+   <property name="geometry">
+    <rect>
+     <x>70</x>
+     <y>470</y>
+     <width>41</width>
+     <height>31</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>民族：</string>
    </property>
   </widget>
  </widget>

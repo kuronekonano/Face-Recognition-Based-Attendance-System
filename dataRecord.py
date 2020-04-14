@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-# Author: winterssy <winterssy@foxmail.com>
+# Author: kuronekonano <god772525182@gmail.com>
+# 人脸信息录入
+import re
 
 import cv2
+import pymysql
 
-from PyQt5.QtCore import QTimer, QRegExp, pyqtSignal
+from PyQt5.QtCore import QTimer, QRegExp, pyqtSignal, QThread
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QRegExpValidator, QTextCursor
-from PyQt5.QtWidgets import QDialog, QApplication, QWidget, QMessageBox
+from PyQt5.QtWidgets import QDialog, QApplication, QWidget, QMessageBox, QFileDialog
 from PyQt5.uic import loadUi
 
 import logging
 import logging.config
 import queue
 import threading
-import sqlite3
 import os
 import sys
+import xlrd
 
 from datetime import datetime
 
@@ -34,20 +37,24 @@ class DataRecordUI(QWidget):
 
     def __init__(self):
         super(DataRecordUI, self).__init__()
-        loadUi('./ui/DataRecord.ui', self)
+        loadUi('./ui/DataRecord.ui', self)  # 读取UI布局
         self.setWindowIcon(QIcon('./icons/icon.png'))
-        self.setFixedSize(1011, 601)
+        self.setFixedSize(1528, 856)
 
         # OpenCV
+        # 摄像头
         self.cap = cv2.VideoCapture()
+        # 分类器
         self.faceCascade = cv2.CascadeClassifier('./haarcascades/haarcascade_frontalface_default.xml')
 
-        self.logQueue = queue.Queue()  # 日志队列
+        # 日志队列
+        self.logQueue = queue.Queue()
 
         # 图像捕获
         self.isExternalCameraUsed = False
         self.useExternalCameraCheckBox.stateChanged.connect(
             lambda: self.useExternalCamera(self.useExternalCameraCheckBox))
+
         self.startWebcamButton.toggled.connect(self.startWebcam)
         self.startWebcamButton.setCheckable(True)
 
@@ -61,7 +68,7 @@ class DataRecordUI(QWidget):
         self.enableFaceDetectButton.setCheckable(True)
 
         # 数据库
-        self.database = './FaceBase.db'
+        # self.database = 'users'
         self.datasets = './datasets'
         self.isDbReady = False
         self.initDbButton.setIcon(QIcon('./icons/warning.png'))
@@ -69,23 +76,93 @@ class DataRecordUI(QWidget):
 
         # 用户信息
         self.isUserInfoReady = False
-        self.userInfo = {'stu_id': '', 'cn_name': '', 'en_name': ''}
+        self.userInfo = {'stu_id': '',
+                         'cn_name': '',
+                         'en_name': '',
+                         'stu_grade': '',
+                         'stu_class': '',
+                         'stu_sex': '',
+                         'major': ''}
         self.addOrUpdateUserInfoButton.clicked.connect(self.addOrUpdateUserInfo)
-        self.migrateToDbButton.clicked.connect(self.migrateToDb)
+        self.migrateToDbButton.clicked.connect(self.migrateToDb)  # 插入新数据按键绑定
 
         # 人脸采集
-        self.startFaceRecordButton.clicked.connect(lambda: self.startFaceRecord(self.startFaceRecordButton))
+        self.startFaceRecordButton.clicked.connect(
+            lambda: self.startFaceRecord(self.startFaceRecordButton))  # 开始人脸采集按钮绑定，并传入按钮本身用于结束状态控制
         # self.startFaceRecordButton.setCheckable(True)
-        self.faceRecordCount = 0
-        self.minFaceRecordCount = 100
+        self.faceRecordCount = 0  # 已采集照片计数器
+        self.minFaceRecordCount = 100  # 最少采集照片数量
         self.isFaceDataReady = False
         self.isFaceRecordEnabled = False
-        self.enableFaceRecordButton.clicked.connect(self.enableFaceRecord)
+        self.enableFaceRecordButton.clicked.connect(self.enableFaceRecord)  # 按键绑定录入单帧图像
 
         # 日志系统
-        self.receiveLogSignal.connect(lambda log: self.logOutput(log))
+        self.receiveLogSignal.connect(lambda log: self.logOutput(log))  # pyqtsignal信号绑定
         self.logOutputThread = threading.Thread(target=self.receiveLog, daemon=True)
         self.logOutputThread.start()
+
+        # 批量导入
+        self.StartimportButton.setEnabled(False)
+        self.isImage_path_ready = False
+        self.ImagepathButton.clicked.connect(self.choose_images_paths)
+        self.isExcel_path_ready = False
+        self.ExcelpathButton.clicked.connect(self.chooese_excel_paths)
+
+    def chooese_excel_paths(self):
+
+        excel_paths = QFileDialog.getOpenFileNames(self, 'open the dialog',
+                                                   "./",
+                                                   'EXCEL 文件 (*.xlsx;*.xls;*.xlm;*.xlt;*.xlsm;*.xla)')
+        excel_paths = excel_paths[0]
+        conn = pymysql.connect(host='localhost',
+                               user='root',
+                               password='970922',
+                               db='mytest',
+                               port=3306,
+                               charset='utf8')
+        cursor = conn.cursor()
+
+        for path in excel_paths:
+            sheets_file = xlrd.open_workbook(path)
+            for index, sheet in enumerate(sheets_file.sheets()):
+                self.logQueue.put("正在读取文件：" + str(path) + "的第" + str(index) + "个sheet表的内容...")
+                for row in range(sheet.nrows):
+                    row_data = sheet.row_values(row)
+                    if row_data[1] == '姓名':
+                        continue
+                    self.userInfo['stu_id'] = row_data[4]
+                    self.userInfo['cn_name'] = row_data[1]
+                    self.userInfo['en_name'] = row_data[0]
+                    self.userInfo['stu_grade'] = '20' + self.userInfo['stu_id'][:2]
+                    self.userInfo['stu_class'] = row_data[3].rsplit('-', 1)[1]
+                    self.userInfo['stu_sex'] = row_data[5]
+                    self.userInfo['major'] = row_data[2]
+                    self.userInfo['province'] = row_data[-1]
+                    self.userInfo['nation'] = row_data[-2]
+                    # print(self.userInfo)
+                    try:
+                        stu_id = row_data[4]
+                        if not os.path.exists('{}/stu_{}'.format(self.datasets, stu_id)):
+                            os.makedirs('{}/stu_{}'.format(self.datasets, stu_id))
+                        db_user_count = self.commit_to_database(cursor)
+                        self.dbUserCountLcdNum.display(db_user_count)  # 数据库人数计数器
+                    except OperationCancel:
+                        pass
+                    except Exception as e:
+                        print(e)
+                        logging.error('读写数据库异常，无法向数据库插入/更新记录')
+                        self.logQueue.put('Error：读写数据库异常，同步失败')
+                self.logQueue.put('读取完毕！')
+
+        cursor.close()
+        conn.commit()
+        conn.close()
+        self.ImagepathButton.setEnabled(True)
+
+    def choose_images_paths(self):
+        image_paths = QFileDialog.getOpenFileNames(self, 'open the dialog',
+                                                   "./",
+                                                   'EXCEL 文件 (*.xlsx;*.xls;*.xlm;*.xlt;*.xlsm;*.xla)')
 
     # 是否使用外接摄像头
     def useExternalCamera(self, useExternalCameraCheckBox):
@@ -97,26 +174,24 @@ class DataRecordUI(QWidget):
     # 打开/关闭摄像头
     def startWebcam(self, status):
         if status:
-            if self.isExternalCameraUsed:
-                camID = 1
-            else:
-                camID = 0
-            self.cap.open(camID)
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            ret, frame = self.cap.read()
+            if not self.cap.isOpened():
+                camID = 1 if self.isExternalCameraUsed else 0 + cv2.CAP_DSHOW
+                self.cap.open(camID)
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                ret, frame = self.cap.read()  # 获取摄像头调用结果
 
-            if not ret:
-                logging.error('无法调用电脑摄像头{}'.format(camID))
-                self.logQueue.put('Error：初始化摄像头失败')
-                self.cap.release()
-                self.startWebcamButton.setIcon(QIcon('./icons/error.png'))
-                self.startWebcamButton.setChecked(False)
-            else:
-                self.startWebcamButton.setText('关闭摄像头')
-                self.enableFaceDetectButton.setEnabled(True)
-                self.timer.start(5)
-                self.startWebcamButton.setIcon(QIcon('./icons/success.png'))
+                if not ret:
+                    logging.error('无法调用电脑摄像头{}'.format(camID))
+                    self.logQueue.put('Error：初始化摄像头失败')
+                    self.cap.release()
+                    self.startWebcamButton.setIcon(QIcon('./icons/error.png'))
+                    self.startWebcamButton.setChecked(False)
+                else:
+                    self.timer.start(5)
+                    self.enableFaceDetectButton.setEnabled(True)
+                    self.startWebcamButton.setIcon(QIcon('./icons/success.png'))
+                    self.startWebcamButton.setText('关闭摄像头')
         else:
             if self.cap.isOpened():
                 if self.timer.isActive():
@@ -147,13 +222,13 @@ class DataRecordUI(QWidget):
     def startFaceRecord(self, startFaceRecordButton):
         if startFaceRecordButton.text() == '开始采集人脸数据':
             if self.isFaceDetectEnabled:
-                if self.isUserInfoReady:
-                    self.addOrUpdateUserInfoButton.setEnabled(False)
-                    if not self.enableFaceRecordButton.isEnabled():
+                if self.isUserInfoReady:  # 学生信息确认
+                    self.addOrUpdateUserInfoButton.setEnabled(False)  # 采集人脸数据时禁用修改学生信息
+                    if not self.enableFaceRecordButton.isEnabled():  # 启用单帧采集按钮
                         self.enableFaceRecordButton.setEnabled(True)
                     self.enableFaceRecordButton.setIcon(QIcon())
                     self.startFaceRecordButton.setIcon(QIcon('./icons/success.png'))
-                    self.startFaceRecordButton.setText('结束当前人脸采集')
+                    self.startFaceRecordButton.setText('结束当前人脸采集')  # 开始采集按钮状态修改为结束采集
                 else:
                     self.startFaceRecordButton.setIcon(QIcon('./icons/error.png'))
                     self.startFaceRecordButton.setChecked(False)
@@ -161,7 +236,7 @@ class DataRecordUI(QWidget):
             else:
                 self.startFaceRecordButton.setIcon(QIcon('./icons/error.png'))
                 self.logQueue.put('Error：操作失败，请开启人脸检测')
-        else:
+        else:  # 根据按钮文本信息判断是结束采集还是开始采集
             if self.faceRecordCount < self.minFaceRecordCount:
                 text = '系统当前采集了 <font color=blue>{}</font> 帧图像，采集数据过少会导致较大的识别误差。'.format(self.faceRecordCount)
                 informativeText = '<b>请至少采集 <font color=red>{}</font> 帧图像。</b>'.format(self.minFaceRecordCount)
@@ -175,24 +250,24 @@ class DataRecordUI(QWidget):
                                               QMessageBox.No)
 
                 if ret == QMessageBox.Yes:
-                    self.isFaceDataReady = True
+                    self.isFaceDataReady = True  # 结束采集，人脸数据准备完毕
                     if self.isFaceRecordEnabled:
                         self.isFaceRecordEnabled = False
-                    self.enableFaceRecordButton.setEnabled(False)
+                    self.enableFaceRecordButton.setEnabled(False)  # 结束采集，单帧采集按钮禁用
                     self.enableFaceRecordButton.setIcon(QIcon())
-                    self.startFaceRecordButton.setText('开始采集人脸数据')
-                    self.startFaceRecordButton.setEnabled(False)
+                    self.startFaceRecordButton.setText('开始采集人脸数据')  # 修改按钮文本为开始状态
+                    self.startFaceRecordButton.setEnabled(False)  # 不可重新开始采集
                     self.startFaceRecordButton.setIcon(QIcon())
-                    self.migrateToDbButton.setEnabled(True)
+                    self.migrateToDbButton.setEnabled(True)  # 允许提交至数据库
 
     # 定时器，实时更新画面
     def updateFrame(self):
         ret, frame = self.cap.read()
-        # self.image = cv2.flip(self.image, 1)
+        # frame = cv2.flip(frame, 1)  # 水平翻转图片
         if ret:
-            self.displayImage(frame)
+            # self.displayImage(frame)  # ？两次输出？
 
-            if self.isFaceDetectEnabled:
+            if self.isFaceDetectEnabled:  # 人脸检测
                 detected_frame = self.detectFace(frame)
                 self.displayImage(detected_frame)
             else:
@@ -200,21 +275,22 @@ class DataRecordUI(QWidget):
 
     # 检测人脸
     def detectFace(self, frame):
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self.faceCascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # 灰度图
+        faces = self.faceCascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))  # 分类器侦测人脸
 
         stu_id = self.userInfo.get('stu_id')
 
+        #  遍历所有人脸，只允许有一个人的脸
         for (x, y, w, h) in faces:
             if self.isFaceRecordEnabled:
-                try:
+                try:  # 创建学号对应的图片数据集
                     if not os.path.exists('{}/stu_{}'.format(self.datasets, stu_id)):
                         os.makedirs('{}/stu_{}'.format(self.datasets, stu_id))
                     if len(faces) > 1:
                         raise RecordDisturbance
 
                     cv2.imwrite('{}/stu_{}/img.{}.jpg'.format(self.datasets, stu_id, self.faceRecordCount + 1),
-                                gray[y - 20:y + h + 20, x - 20:x + w + 20])
+                                gray[y - 20:y + h + 20, x - 20:x + w + 20])  # 灰度图的人脸区域
                 except RecordDisturbance:
                     self.isFaceRecordEnabled = False
                     logging.error('检测到多张人脸或环境干扰')
@@ -228,9 +304,9 @@ class DataRecordUI(QWidget):
                 else:
                     self.enableFaceRecordButton.setIcon(QIcon('./icons/success.png'))
                     self.faceRecordCount = self.faceRecordCount + 1
-                    self.isFaceRecordEnabled = False
-                    self.faceRecordCountLcdNum.display(self.faceRecordCount)
-            cv2.rectangle(frame, (x - 5, y - 10), (x + w + 5, y + h + 10), (0, 0, 255), 2)
+                    self.isFaceRecordEnabled = False  # 单帧拍摄完成后马上关闭
+                    self.faceRecordCountLcdNum.display(self.faceRecordCount)  # 更新采集数量
+            cv2.rectangle(frame, (x - 5, y - 10), (x + w + 5, y + h + 10), (0, 0, 255), 2)  # 红色追踪框
 
         return frame
 
@@ -239,6 +315,7 @@ class DataRecordUI(QWidget):
         # BGR -> RGB
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         # default：The image is stored using 8-bit indexes into a colormap， for example：a gray image
+        # img = cv2.flip(img, 1)
         qformat = QImage.Format_Indexed8
 
         if len(img.shape) == 3:  # rows[0], cols[1], channels[2]
@@ -259,30 +336,55 @@ class DataRecordUI(QWidget):
 
         outImage = QImage(img, img.shape[1], img.shape[0], img.strides[0], qformat)
         self.faceDetectCaptureLabel.setPixmap(QPixmap.fromImage(outImage))
-        self.faceDetectCaptureLabel.setScaledContents(True)
+        self.faceDetectCaptureLabel.setScaledContents(True)  # 图片自适应大小
 
-    # 初始化数据库
+    # 检查数据库表是否存在
+    @staticmethod
+    def table_exists(cur, table_name):
+        sql = "show tables;"
+        cur.execute(sql)
+        tables = [cur.fetchall()]
+        table_list = re.findall('(\'.*?\')', str(tables))
+        table_list = [re.sub("'", '', each) for each in table_list]
+        if table_name in table_list:
+            return True  # 存在返回1
+        else:
+            return False  # 不存在返回0
+
+    # 检查数据库
     def initDb(self):
-        conn = sqlite3.connect(self.database)
+        conn = pymysql.connect(host='localhost',
+                               user='root',
+                               password='970922',
+                               db='mytest',
+                               port=3306,
+                               charset='utf8')
         cursor = conn.cursor()
-        try:
-            # 检测人脸数据目录是否存在，不存在则创建
-            if not os.path.isdir(self.datasets):
-                os.makedirs(self.datasets)
 
-            # 查询数据表是否存在，不存在则创建
-            cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-                              stu_id VARCHAR(12) PRIMARY KEY NOT NULL,
-                              face_id INTEGER DEFAULT -1,
-                              cn_name VARCHAR(10) NOT NULL,
-                              en_name VARCHAR(16) NOT NULL,
-                              created_time DATE DEFAULT (date('now','localtime'))
-                              )
-                          ''')
+        try:
+            if not self.table_exists(cursor, 'users'):
+                create_table_sql = '''CREATE TABLE IF NOT EXISTS users (
+                                              stu_id VARCHAR(20) PRIMARY KEY NOT NULL,
+                                              face_id INTEGER DEFAULT -1,
+                                              cn_name VARCHAR(30) NOT NULL,
+                                              en_name VARCHAR(30) NOT NULL,
+                                              major VARCHAR(40) NOT NULL,
+                                              grade int(5) DEFAULT NULL,
+                                              class int(5) DEFAULT NULL,
+                                              sex int(2) DEFAULT NULL,
+                                              province VARCHAR(40) NOT NULL,
+                                              nation VARCHAR(40) NOT NULL,
+                                              last_attendance_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                              total_attendance_times INT NOT NULL DEFAULT 0,
+                                              created_time DATETIME DEFAULT CURRENT_TIMESTAMP
+                                              )
+                                          '''
+
+                cursor.execute()
             # 查询数据表记录数
             cursor.execute('SELECT Count(*) FROM users')
             result = cursor.fetchone()
-            dbUserCount = result[0]
+            db_user_count = result[0]
         except Exception as e:
             logging.error('读取数据库异常，无法完成数据库初始化')
             self.isDbReady = False
@@ -290,48 +392,101 @@ class DataRecordUI(QWidget):
             self.logQueue.put('Error：初始化数据库失败')
         else:
             self.isDbReady = True
-            self.dbUserCountLcdNum.display(dbUserCount)
+            self.dbUserCountLcdNum.display(db_user_count)
             self.logQueue.put('Success：数据库初始化完成')
             self.initDbButton.setIcon(QIcon('./icons/success.png'))
             self.initDbButton.setEnabled(False)
             self.addOrUpdateUserInfoButton.setEnabled(True)
+            self.ExcelpathButton.setEnabled(True)
         finally:
             cursor.close()
             conn.commit()
             conn.close()
 
-    # 增加/修改用户信息
+    # 通过对话框输入增加/修改用户信息
     def addOrUpdateUserInfo(self):
-        self.userInfoDialog = UserInfoDialog()
 
-        stu_id, cn_name, en_name = self.userInfo.get('stu_id'), self.userInfo.get('cn_name'), self.userInfo.get(
-            'en_name')
+        self.userInfoDialog = UserInfoDialog()  # 用户信息窗口实例
+
+        # 获取上次输入内容
+        stu_id = self.userInfo.get('stu_id')
+        cn_name = self.userInfo.get('cn_name')
+        en_name = self.userInfo.get('en_name')
+        major = self.userInfo.get('major')
+        stu_grade = self.userInfo.get('stu_grade')
+        stu_class = self.userInfo.get('stu_class')
+        stu_sex = self.userInfo.get('stu_sex')
+        province = self.userInfo.get('province')
+        nation = self.userInfo.get('nation')
+        # 填充上次输入内容到对话框中
         self.userInfoDialog.stuIDLineEdit.setText(stu_id)
         self.userInfoDialog.cnNameLineEdit.setText(cn_name)
         self.userInfoDialog.enNameLineEdit.setText(en_name)
-
+        self.userInfoDialog.MajorLineEdit.setText(major)
+        self.userInfoDialog.GradeLineEdit.setText(stu_grade)
+        self.userInfoDialog.ClassLineEdit.setText(stu_class)
+        self.userInfoDialog.SexLineEdit.setText(stu_sex)
+        self.userInfoDialog.ProvinceLineEdit.setText(province)
+        self.userInfoDialog.NationLineEdit.setText(nation)
+        # 保存输入信息
         self.userInfoDialog.okButton.clicked.connect(self.checkToApplyUserInfo)
         self.userInfoDialog.exec()
 
     # 校验用户信息并提交
     def checkToApplyUserInfo(self):
-        if not (self.userInfoDialog.stuIDLineEdit.hasAcceptableInput() and
-                self.userInfoDialog.cnNameLineEdit.hasAcceptableInput() and
-                self.userInfoDialog.enNameLineEdit.hasAcceptableInput()):
-            self.userInfoDialog.msgLabel.setText('<font color=red>你的输入有误，提交失败，请检查并重试！</font>')
+        # 不符合校验条件，输出提示
+        if not self.userInfoDialog.stuIDLineEdit.hasAcceptableInput():
+            self.userInfoDialog.msgLabel.setText('<font color=red>你的学号输入有误，提交失败，请检查并重试！</font>')
+        elif not self.userInfoDialog.cnNameLineEdit.hasAcceptableInput():
+            self.userInfoDialog.msgLabel.setText('<font color=red>你的姓名输入有误，提交失败，请检查并重试！</font>')
+        elif not self.userInfoDialog.enNameLineEdit.hasAcceptableInput():
+            self.userInfoDialog.msgLabel.setText('<font color=red>你的英文名输入有误，提交失败，请检查并重试！</font>')
+        elif not self.userInfoDialog.GradeLineEdit.hasAcceptableInput():
+            self.userInfoDialog.msgLabel.setText('<font color=red>你的年级输入有误，提交失败，请检查并重试！</font>')
+        elif not self.userInfoDialog.ClassLineEdit.hasAcceptableInput():
+            self.userInfoDialog.msgLabel.setText('<font color=red>你的班级输入有误，提交失败，请检查并重试！</font>')
+        elif not self.userInfoDialog.SexLineEdit.hasAcceptableInput():
+            self.userInfoDialog.msgLabel.setText('<font color=red>你的性别输入有误，提交失败，请检查并重试！</font>')
+        elif not self.userInfoDialog.MajorLineEdit.hasAcceptableInput():
+            self.userInfoDialog.msgLabel.setText('<font color=red>你的专业输入有误，提交失败，请检查并重试！</font>')
+        elif not self.userInfoDialog.ProvinceLineEdit.hasAcceptableInput():
+            self.userInfoDialog.msgLabel.setText('<font color=red>你的生源地输入有误，提交失败，请检查并重试！</font>')
+        elif not self.userInfoDialog.NationLineEdit.hasAcceptableInput():
+            self.userInfoDialog.msgLabel.setText('<font color=red>你的民族输入有误，提交失败，请检查并重试！</font>')
         else:
             # 获取用户输入
             self.userInfo['stu_id'] = self.userInfoDialog.stuIDLineEdit.text().strip()
             self.userInfo['cn_name'] = self.userInfoDialog.cnNameLineEdit.text().strip()
             self.userInfo['en_name'] = self.userInfoDialog.enNameLineEdit.text().strip()
+            self.userInfo['stu_grade'] = self.userInfoDialog.GradeLineEdit.text().strip()
+            self.userInfo['stu_class'] = self.userInfoDialog.ClassLineEdit.text().strip()
+            self.userInfo['stu_sex'] = self.userInfoDialog.SexLineEdit.text().strip()
+            self.userInfo['major'] = self.userInfoDialog.MajorLineEdit.text().strip()
+            self.userInfo['province'] = self.userInfoDialog.ProvinceLineEdit.text().strip()
+            self.userInfo['nation'] = self.userInfoDialog.NationLineEdit.text().strip()
 
-            # 信息确认
-            stu_id, cn_name, en_name = self.userInfo.get('stu_id'), self.userInfo.get('cn_name'), self.userInfo.get(
-                'en_name')
+            # 录入端对话框信息确认
+            stu_id = self.userInfo.get('stu_id')
+            cn_name = self.userInfo.get('cn_name')
+            en_name = self.userInfo.get('en_name')
+            major = self.userInfo.get('major')
+            stu_grade = self.userInfo.get('stu_grade')
+            stu_class = self.userInfo.get('stu_class')
+            stu_sex = self.userInfo.get('stu_sex')
+            province = self.userInfo.get('province')
+            nation = self.userInfo.get('nation')
+
             self.stuIDLineEdit.setText(stu_id)
             self.cnNameLineEdit.setText(cn_name)
             self.enNameLineEdit.setText(en_name)
+            self.MajorLineEdit.setText(major)
+            self.GradeLineEdit.setText(stu_grade)
+            self.ClassLineEdit.setText(stu_class)
+            self.SexLineEdit.setText(stu_sex)
+            self.ProvinceLineEdit.setText(province)
+            self.NationLineEdit.setText(nation)
 
+            # 输入并保存合法的学生信息后允许使用人脸采集按钮
             self.isUserInfoReady = True
             if not self.startFaceRecordButton.isEnabled():
                 self.startFaceRecordButton.setEnabled(True)
@@ -340,39 +495,63 @@ class DataRecordUI(QWidget):
             # 关闭对话框
             self.userInfoDialog.close()
 
+    # 提交数据至数据库
+    def commit_to_database(self, cursor):
+        stu_id = self.userInfo.get('stu_id')
+        cn_name = self.userInfo.get('cn_name')
+        en_name = self.userInfo.get('en_name')
+        major = self.userInfo.get('major')
+        stu_grade = self.userInfo.get('stu_grade')
+        stu_class = self.userInfo.get('stu_class')
+        stu_sex = 1 if self.userInfo.get('stu_sex') == '男' else 0
+        province = self.userInfo.get('province')
+        nation = self.userInfo.get('nation')
+        # print(stu_sex)
+        cursor.execute('SELECT * FROM users WHERE stu_id=%s', (stu_id,))
+        if cursor.fetchall():
+            text = '数据库已存在学号为 <font color=blue>{}</font> 的用户记录。'.format(stu_id)
+            informativeText = '<b>是否覆盖？</b>'
+            ret = DataRecordUI.callDialog(QMessageBox.Warning, text, informativeText,
+                                          QMessageBox.Yes | QMessageBox.No)
+
+            if ret == QMessageBox.Yes:
+                # 更新已有记录
+                cursor.execute(
+                    'UPDATE users SET cn_name=%s, en_name=%s ,major=%s, grade=%s, class=%s, sex=%s, province=%s, nation=%s WHERE stu_id=%s',
+                    (cn_name, en_name, major, stu_grade, stu_class, stu_sex, stu_id, province, nation))
+            else:
+                raise OperationCancel  # 记录取消覆盖操作
+        else:
+            # 插入新记录
+            cursor.execute(
+                'INSERT INTO users (stu_id, cn_name, en_name, major, grade, class, sex, province, nation) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)',
+                (stu_id, cn_name, en_name, major, stu_grade, stu_class, stu_sex, province, nation))
+
+        cursor.execute('SELECT Count(*) FROM users')
+        result = cursor.fetchone()
+        return result[0]
+
     # 同步用户信息到数据库
     def migrateToDb(self):
+        # 仅有人脸数据录入完毕之后才能提交学生信息
         if self.isFaceDataReady:
-            stu_id, cn_name, en_name = self.userInfo.get('stu_id'), self.userInfo.get('cn_name'), self.userInfo.get(
-                'en_name')
-            conn = sqlite3.connect(self.database)
+            stu_id = self.userInfo.get('stu_id')
+            cn_name = self.userInfo.get('cn_name')
+
+            conn = pymysql.connect(host='localhost',
+                                   user='root',
+                                   password='970922',
+                                   db='mytest',
+                                   port=3306,
+                                   charset='utf8')
             cursor = conn.cursor()
 
             try:
-                cursor.execute('SELECT * FROM users WHERE stu_id=?', (stu_id,))
-                if cursor.fetchall():
-                    text = '数据库已存在学号为 <font color=blue>{}</font> 的用户记录。'.format(stu_id)
-                    informativeText = '<b>是否覆盖？</b>'
-                    ret = DataRecordUI.callDialog(QMessageBox.Warning, text, informativeText,
-                                                  QMessageBox.Yes | QMessageBox.No)
-
-                    if ret == QMessageBox.Yes:
-                        # 更新已有记录
-                        cursor.execute('UPDATE users SET cn_name=?, en_name=? WHERE stu_id=?',
-                                       (cn_name, en_name, stu_id,))
-                    else:
-                        raise OperationCancel  # 记录取消覆盖操作
-                else:
-                    # 插入新记录
-                    cursor.execute('INSERT INTO users (stu_id, cn_name, en_name) VALUES (?, ?, ?)',
-                                   (stu_id, cn_name, en_name,))
-
-                cursor.execute('SELECT Count(*) FROM users')
-                result = cursor.fetchone()
-                dbUserCount = result[0]
+                db_user_count = self.commit_to_database(cursor)
             except OperationCancel:
                 pass
             except Exception as e:
+                print(e)
                 logging.error('读写数据库异常，无法向数据库插入/更新记录')
                 self.migrateToDbButton.setIcon(QIcon('./icons/error.png'))
                 self.logQueue.put('Error：读写数据库异常，同步失败')
@@ -387,14 +566,17 @@ class DataRecordUI(QWidget):
                 self.isUserInfoReady = False
 
                 self.faceRecordCount = 0
-                self.isFaceDataReady = False
-                self.faceRecordCountLcdNum.display(self.faceRecordCount)
-                self.dbUserCountLcdNum.display(dbUserCount)
+                self.isFaceDataReady = False  # 人脸信息采集完成标志
+                self.faceRecordCountLcdNum.display(self.faceRecordCount)  # 人脸采集计数器
+                self.dbUserCountLcdNum.display(db_user_count)  # 数据库人数计数器
 
-                # 清空历史输入
+                # 清空确认信息
                 self.stuIDLineEdit.clear()
                 self.cnNameLineEdit.clear()
                 self.enNameLineEdit.clear()
+                self.SexLineEdit.clear()
+                self.ProvinceLineEdit.clear()
+                self.NationLineEdit.clear()
                 self.migrateToDbButton.setIcon(QIcon('./icons/success.png'))
 
                 # 允许继续增加新用户
@@ -415,8 +597,6 @@ class DataRecordUI(QWidget):
             data = self.logQueue.get()
             if data:
                 self.receiveLogSignal.emit(data)
-            else:
-                continue
 
     # LOG输出
     def logOutput(self, log):
@@ -424,8 +604,8 @@ class DataRecordUI(QWidget):
         time = datetime.now().strftime('[%Y/%m/%d %H:%M:%S]')
         log = time + ' ' + log + '\n'
 
-        self.logTextEdit.moveCursor(QTextCursor.End)
-        self.logTextEdit.insertPlainText(log)
+        self.logTextEdit.moveCursor(QTextCursor.End)  # 光标移动至末尾
+        self.logTextEdit.insertPlainText(log)  # 末尾插入日志消息
         self.logTextEdit.ensureCursorVisible()  # 自动滚屏
 
     # 系统对话框
@@ -435,8 +615,8 @@ class DataRecordUI(QWidget):
         msg.setWindowIcon(QIcon('./icons/icon.png'))
         msg.setWindowTitle('OpenCV Face Recognition System - DataRecord')
         msg.setIcon(icon)
-        msg.setText(text)
-        msg.setInformativeText(informativeText)
+        msg.setText(text)  # 对话框文本信息
+        msg.setInformativeText(informativeText)  # 对话框详细信息
         msg.setStandardButtons(standardButtons)
         if defaultButton:
             msg.setDefaultButton(defaultButton)
@@ -444,33 +624,67 @@ class DataRecordUI(QWidget):
 
     # 窗口关闭事件，关闭定时器、摄像头
     def closeEvent(self, event):
-        if self.timer.isActive():
+        if self.timer.isActive():  # 关闭定时器
             self.timer.stop()
-        if self.cap.isOpened():
+        if self.cap.isOpened():  # 关闭摄像头
             self.cap.release()
         event.accept()
 
 
 # 用户信息填写对话框
 class UserInfoDialog(QDialog):
+
     def __init__(self):
         super(UserInfoDialog, self).__init__()
-        loadUi('./ui/UserInfoDialog.ui', self)
+        loadUi('./ui/UserInfoDialog.ui', self)  # 读取UI布局
         self.setWindowIcon(QIcon('./icons/icon.png'))
-        self.setFixedSize(425, 300)
+        self.setFixedSize(613, 593)
 
         # 使用正则表达式限制用户输入
-        stu_id_regx = QRegExp('^[0-9]{12}$')
+        stu_id_regx = QRegExp('^[0-9]{10}$')  # 10位学号，如1604010901
         stu_id_validator = QRegExpValidator(stu_id_regx, self.stuIDLineEdit)
         self.stuIDLineEdit.setValidator(stu_id_validator)
 
-        cn_name_regx = QRegExp('^[\u4e00-\u9fa5]{1,10}$')
+        cn_name_regx = QRegExp('^[\u4e00-\u9fa5]{1,10}$')  # 姓名，只允许输入汉字
         cn_name_validator = QRegExpValidator(cn_name_regx, self.cnNameLineEdit)
         self.cnNameLineEdit.setValidator(cn_name_validator)
 
-        en_name_regx = QRegExp('^[ A-Za-z]{1,16}$')
-        en_name_validator = QRegExpValidator(en_name_regx, self.enNameLineEdit)
-        self.enNameLineEdit.setValidator(en_name_validator)
+        en_name_regx = QRegExp('^[ A-Za-z]{1,16}$')  # 姓名的英文表示
+        en_name_validator = QRegExpValidator(en_name_regx, self.enNameLineEdit)  # Qt校验器
+        self.enNameLineEdit.setValidator(en_name_validator)  # 用于根据正则式限制输入
+
+        major_regx = QRegExp('^[\u4e00-\u9fa5]{1,20}$')  # 专业，只允许输入汉字
+        major_validator = QRegExpValidator(major_regx, self.MajorLineEdit)
+        self.MajorLineEdit.setValidator(major_validator)
+
+        grade_regx = QRegExp('^[0-9]{4}$')  # 年级/入学年份，4位数字
+        grade_validator = QRegExpValidator(grade_regx, self.GradeLineEdit)
+        self.GradeLineEdit.setValidator(grade_validator)
+
+        class_regx = QRegExp('^[0-9]{1,2}$')  # 年级/入学年份，4位数字
+        class_validator = QRegExpValidator(class_regx, self.ClassLineEdit)
+        self.ClassLineEdit.setValidator(class_validator)
+
+        sex_regx = QRegExp('^[男|女]{1}$')  # 性别，只允许输入汉字
+        sex_validator = QRegExpValidator(sex_regx, self.SexLineEdit)
+        self.SexLineEdit.setValidator(sex_validator)
+
+        province_regx = QRegExp('^[\u4e00-\u9fa5]{1,10}$')  # 生源地，只允许输入省份全称
+        province_validator = QRegExpValidator(province_regx, self.ProvinceLineEdit)
+        self.ProvinceLineEdit.setValidator(province_validator)
+
+        nation_regx = QRegExp('^[\u4e00-\u9fa5]{1,10}$')  # 民族，只允许输入名族名称
+        nation_validator = QRegExpValidator(nation_regx, self.NationLineEdit)
+        self.NationLineEdit.setValidator(nation_validator)
+
+
+class ReadExcelData(QThread):
+
+    def __init__(self):
+        super().__init__()
+        sheet_path = QFileDialog.getOpenFileName(self, 'open the dialog',
+                                                 "./",
+                                                 'All Files (*)')
 
 
 if __name__ == '__main__':

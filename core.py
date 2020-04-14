@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-# Author: winterssy <winterssy@foxmail.com>
-
+# Author: kuronekonano <god772525182@gmail.com>
+import dlib
+import pymysql
 import telegram
 import cv2
-import dlib
+from PIL import Image, ImageDraw, ImageFont
 
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, QRegExp, Qt
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QTextCursor, QRegExpValidator
@@ -14,62 +15,91 @@ import os
 import webbrowser
 import logging
 import logging.config
-import sqlite3
 import sys
 import threading
 import queue
 import multiprocessing
 import winsound
+import numpy
+import csv
 
 from configparser import ConfigParser
 from datetime import datetime
 
+from dataRecord import DataRecordUI
 
-# 找不到已训练的人脸数据文件
+fontStyle = ImageFont.truetype(
+    "微软雅黑Bold.ttf", 20, encoding="utf-8")  # 字体格式
+
+faceCascade = cv2.CascadeClassifier('./haarcascades/haarcascade_frontalface_default.xml')  # 脸部捕获器
+predictor = dlib.shape_predictor('./shape_predictor_5_face_landmarks.dat')
+
+
+# 中文名渲染
+def cv2ImgAddText(img, text, left, top, textColor=(0, 0, 255)):
+    if isinstance(img, numpy.ndarray):  # 判断是否OpenCV图片类型
+        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    # 创建一个可以在给定图像上绘图的对象
+    draw = ImageDraw.Draw(img)
+    # 绘制文本
+    draw.text((left, top), text, textColor, font=fontStyle)
+    # 转换回OpenCV格式
+    return cv2.cvtColor(numpy.asarray(img), cv2.COLOR_RGB2BGR)
+
+
+# 找不到已训练的人脸数据文件,错误类
 class TrainingDataNotFoundError(FileNotFoundError):
     pass
 
 
-# 找不到数据库文件
+# 找不到数据库文件，错误类
 class DatabaseNotFoundError(FileNotFoundError):
     pass
 
 
 class CoreUI(QMainWindow):
-    database = './FaceBase.db'
-    trainingData = './recognizer/trainingData.yml'
-    cap = cv2.VideoCapture()
+    # database = './FaceBase.db'  # sqlite 数据库路径，存储学生信息文本
+    trainingData = './recognizer/trainingData.yml'  # 训练数据路径【由数据录入时生成】
+    cap = cv2.VideoCapture()  # OpenCV获取视频源方法
     captureQueue = queue.Queue()  # 图像队列
     alarmQueue = queue.LifoQueue()  # 报警队列，后进先出
-    logQueue = multiprocessing.Queue()  # 日志队列
+    saveQueue = queue.Queue()  # 报警队列，后进先出
+    logQueue = multiprocessing.Queue()  # 日志队列，用于同步所有功能多进程状态
     receiveLogSignal = pyqtSignal(str)  # LOG信号
 
     def __init__(self):
         super(CoreUI, self).__init__()
-        loadUi('./ui/Core.ui', self)
-        self.setWindowIcon(QIcon('./icons/icon.png'))
-        self.setFixedSize(1161, 623)
+        self.timer = QTimer(self)  # 定时器实例化
+        self.faceProcessingThread = FaceProcessingThread()  # OpenCV处理线程实例化
+        self.isExternalCameraUsed = False  # 默认不使用外接摄像头
+        loadUi('./ui/Core.ui', self)  # 读取qtUI配置
+        self.setWindowIcon(QIcon('./icons/icon.png'))  # 设置窗口图标
+        self.setFixedSize(1700, 900)  # 窗口大小
+        self.InitUI()
 
+    def InitUI(self):
         # 图像捕获
-        self.isExternalCameraUsed = False
         self.useExternalCameraCheckBox.stateChanged.connect(
-            lambda: self.useExternalCamera(self.useExternalCameraCheckBox))
-        self.faceProcessingThread = FaceProcessingThread()
-        self.startWebcamButton.clicked.connect(self.startWebcam)
+            lambda: self.useExternalCamera(self.useExternalCameraCheckBox))  # 按钮初始化绑定 更新外接摄像头按钮状态
 
-        # 数据库
-        self.initDbButton.setIcon(QIcon('./icons/warning.png'))
-        self.initDbButton.clicked.connect(self.initDb)
+        self.startWebcamButton.toggled.connect(self.startWebcam)  # 按钮绑定开启摄像头逻辑
+        self.startWebcamButton.setCheckable(True)
 
-        self.timer = QTimer(self)  # 初始化一个定时器
+        # 数据库按钮绑定
+        self.initDbButton.setIcon(QIcon('./icons/warning.png'))  # 数据警告图标
+        self.initDbButton.clicked.connect(self.initDb)  # 按钮绑定数据库初始化函数
+
+        # 定时器用于对QTUI画面进行定期更新，camera画面的图片需要实时更新
+        # 定时器每5ms更新摄像头帧画面，此处绑定定时器绑定更新函数
         self.timer.timeout.connect(self.updateFrame)
 
         # 功能开关
         self.faceTrackerCheckBox.stateChanged.connect(
-            lambda: self.faceProcessingThread.enableFaceTracker(self))
+            lambda: self.faceProcessingThread.enableFaceTracker(self))  # 人脸检测,ui默认开启
         self.faceRecognizerCheckBox.stateChanged.connect(
-            lambda: self.faceProcessingThread.enableFaceRecognizer(self))
-        self.panalarmCheckBox.stateChanged.connect(lambda: self.faceProcessingThread.enablePanalarm(self))
+            lambda: self.faceProcessingThread.enableFaceRecognizer(self))  # 人脸识别，ui默认不开启，默认不可用
+        self.panalarmCheckBox.stateChanged.connect(
+            lambda: self.faceProcessingThread.enablePanalarm(self))  # 报警系统，ui默认开启
 
         # 直方图均衡化
         self.equalizeHistCheckBox.stateChanged.connect(
@@ -83,40 +113,52 @@ class CoreUI(QMainWindow):
             lambda: self.faceProcessingThread.setAutoAlarmThreshold(self))
 
         # 报警系统
-        self.alarmSignalThreshold = 10
-        self.panalarmThread = threading.Thread(target=self.recieveAlarm, daemon=True)
-        self.isBellEnabled = True
-        self.bellCheckBox.stateChanged.connect(lambda: self.enableBell(self.bellCheckBox))
-        self.isTelegramBotPushEnabled = False
+        self.recieveAlarm = RecieveAlarm()
+        # self.alarmSignalThreshold = 10
+        # self.panalarmThread = threading.Thread(target=self.recieveAlarm, daemon=True)  # 报警线程实例
+        # self.isBellEnabled = True  # 报警开关默认开启
+        # self.bellCheckBox.stateChanged.connect(lambda: self.enableBell(self.bellCheckBox))
+        self.bellCheckBox.stateChanged.connect(lambda: self.recieveAlarm.enableBell(self))
+        # self.isTelegramBotPushEnabled = False  # 报警机器人默认关闭
         self.telegramBotPushCheckBox.stateChanged.connect(
-            lambda: self.enableTelegramBotPush(self.telegramBotPushCheckBox))
+            lambda: self.recieveAlarm.enableTelegramBotPush(self))
         self.telegramBotSettingsButton.clicked.connect(self.telegramBotSettings)
 
         # 帮助与支持
         self.viewGithubRepoButton.clicked.connect(
-            lambda: webbrowser.open('https://github.com/winterssy/face_recognition_py'))
-        self.contactDeveloperButton.clicked.connect(lambda: webbrowser.open('https://t.me/winterssy'))
+            lambda: webbrowser.open('https://github.com/kuronekonano/Face-Recognition-Based-Attendance-System/'))
+        self.contactDeveloperButton.clicked.connect(lambda: webbrowser.open('https://t.me/kuronekonano'))
 
         # 日志系统
-        self.receiveLogSignal.connect(lambda log: self.logOutput(log))
+        self.receiveLogSignal.connect(lambda log: self.logOutput(log))  # 日志系统信号绑定输出功能
         self.logOutputThread = threading.Thread(target=self.receiveLog, daemon=True)
-        self.logOutputThread.start()
+        self.logOutputThread.start()  # 日志监听线程
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Escape:
+            self.close()
 
     # 检查数据库状态
     def initDb(self):
         try:
-            if not os.path.isfile(self.database):
+            conn = pymysql.connect(host='localhost',
+                                   user='root',
+                                   password='970922',
+                                   db='mytest',
+                                   port=3306,
+                                   charset='utf8')
+            cursor = conn.cursor()
+
+            if not DataRecordUI.table_exists(cursor, 'user'):  # 检查学生信息数据库
                 raise DatabaseNotFoundError
-            if not os.path.isfile(self.trainingData):
+            if not os.path.isfile(self.trainingData):  # 检查训练数据
                 raise TrainingDataNotFoundError
 
-            conn = sqlite3.connect(self.database)
-            cursor = conn.cursor()
-            cursor.execute('SELECT Count(*) FROM users')
+            cursor.execute('SELECT Count(*) FROM users')  # 查询数据库人数
             result = cursor.fetchone()
             dbUserCount = result[0]
         except DatabaseNotFoundError:
-            logging.error('系统找不到数据库文件{}'.format(self.database))
+            logging.error('系统找不到数据库表{}'.format('users'))
             self.initDbButton.setIcon(QIcon('./icons/error.png'))
             self.logQueue.put('Error：未发现数据库文件，你可能未进行人脸采集')
         except TrainingDataNotFoundError:
@@ -133,13 +175,13 @@ class CoreUI(QMainWindow):
             if not dbUserCount > 0:
                 logging.warning('数据库为空')
                 self.logQueue.put('warning：数据库为空，人脸识别功能不可用')
-                self.initDbButton.setIcon(QIcon('./icons/warning.png'))
+                self.initDbButton.setIcon(QIcon('./icons/warning.png'))  # 数据库为空时可重复初始化
             else:
-                self.logQueue.put('Success：数据库状态正常，发现用户数：{}'.format(dbUserCount))
-                self.initDbButton.setIcon(QIcon('./icons/success.png'))
-                self.initDbButton.setEnabled(False)
-                self.faceRecognizerCheckBox.setToolTip('须先开启人脸跟踪')
-                self.faceRecognizerCheckBox.setEnabled(True)
+                self.logQueue.put('Success：数据库状态正常，发现用户数：{}'.format(dbUserCount))  # 数据库状态信息插入日志队列
+                self.initDbButton.setIcon(QIcon('./icons/success.png'))  # 修改图标
+                self.initDbButton.setEnabled(False)  # 只允许初始化一次数据库，之后按钮变为不可用
+                self.faceRecognizerCheckBox.setToolTip('须先开启人脸跟踪')  # 修改人脸识别复选框提示符
+                self.faceRecognizerCheckBox.setEnabled(True)  # 初始化数据库成功后人脸识别复选框改为可用
 
     # 是否使用外接摄像头
     def useExternalCamera(self, useExternalCameraCheckBox):
@@ -149,53 +191,52 @@ class CoreUI(QMainWindow):
             self.isExternalCameraUsed = False
 
     # 打开/关闭摄像头
-    def startWebcam(self):
-        if not self.cap.isOpened():
-            if self.isExternalCameraUsed:
-                camID = 1
-            else:
-                camID = 0
-            self.cap.open(camID)
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            ret, frame = self.cap.read()
-            if not ret:
-                logging.error('无法调用电脑摄像头{}'.format(camID))
-                self.logQueue.put('Error：初始化摄像头失败')
-                self.cap.release()
-                self.startWebcamButton.setIcon(QIcon('./icons/error.png'))
-            else:
-                self.faceProcessingThread.start()  # 启动OpenCV图像处理线程
-                self.timer.start(5)  # 启动定时器
-                self.panalarmThread.start()  # 启动报警系统线程
-                self.startWebcamButton.setIcon(QIcon('./icons/success.png'))
-                self.startWebcamButton.setText('关闭摄像头')
+    def startWebcam(self, status):
+        if status:
+            if not self.cap.isOpened():  # 开启摄像头，判断视频源选项
+                camID = 1 if self.isExternalCameraUsed else 0 + cv2.CAP_DSHOW
+                self.cap.open(camID)  # 开启视频源摄像头
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # 视频流的宽高
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                ret, frame = self.cap.read()  # 逐帧捕捉
 
-        else:
-            text = '如果关闭摄像头，须重启程序才能再次打开。'
-            informativeText = '<b>是否继续？</b>'
-            ret = CoreUI.callDialog(QMessageBox.Warning, text, informativeText, QMessageBox.Yes | QMessageBox.No,
-                                    QMessageBox.No)
-
-            if ret == QMessageBox.Yes:
-                self.faceProcessingThread.stop()
-                if self.cap.isOpened():
-                    if self.timer.isActive():
-                        self.timer.stop()
+                if not ret:
+                    logging.error('无法调用电脑摄像头{}'.format(camID))
+                    self.logQueue.put('Error：初始化摄像头失败')
                     self.cap.release()
+                    self.startWebcamButton.setIcon(QIcon('./icons/error.png'))
+                else:
+                    self.timer.start(5)  # 启动定时器,每5ms刷新一次
+                    self.faceProcessingThread.start()  # 启动OpenCV图像处理线程
+                    self.recieveAlarm.start()
+                    # self.panalarmThread.start()  # 启动报警系统线程
+                    self.startWebcamButton.setIcon(QIcon('./icons/success.png'))
+                    self.startWebcamButton.setText('关闭摄像头')
+        else:  # 关闭摄像头
+            # text = '如果关闭摄像头，须重启程序才能再次打开。'
+            # informativeText = '<b>是否继续？</b>'
+            # ret = CoreUI.callDialog(QMessageBox.Warning, text, informativeText, QMessageBox.Yes | QMessageBox.No,
+            #                         QMessageBox.No)
+
+            # if ret == QMessageBox.Yes:
+            self.faceProcessingThread.stop()
+            self.recieveAlarm.stop()
+            if self.cap.isOpened():
+                if self.timer.isActive():
+                    self.timer.stop()
+                self.cap.release()  # 释放捕获
 
                 self.realTimeCaptureLabel.clear()
                 self.realTimeCaptureLabel.setText('<font color=red>摄像头未开启</font>')
-                self.startWebcamButton.setText('摄像头已关闭')
-                self.startWebcamButton.setEnabled(False)
+                self.startWebcamButton.setText('打开摄像头')
+                # self.startWebcamButton.setText('摄像头已关闭')  # 当存在报警线程时启用
+                # self.startWebcamButton.setEnabled(False)
                 self.startWebcamButton.setIcon(QIcon())
+                self.captureQueue.queue.clear()
 
     # 定时器，实时更新画面
     def updateFrame(self):
         if self.cap.isOpened():
-            # ret, frame = self.cap.read()
-            # if ret:
-            #     self.showImg(frame, self.realTimeCaptureLabel)
             if not self.captureQueue.empty():
                 captureData = self.captureQueue.get()
                 realTimeFrame = captureData.get('realTimeFrame')
@@ -205,6 +246,7 @@ class CoreUI(QMainWindow):
     def displayImage(self, img, qlabel):
         # BGR -> RGB
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # img = cv2.flip(img, 1)
         # default：The image is stored using 8-bit indexes into a colormap， for example：a gray image
         qformat = QImage.Format_Indexed8
 
@@ -256,7 +298,7 @@ class CoreUI(QMainWindow):
                 self.logQueue.put('Error：操作失败，至少选择一种报警方式')
                 self.telegramBotPushCheckBox.setCheckState(Qt.Unchecked)
                 self.telegramBotPushCheckBox.setChecked(True)
-        # print('isTelegramBotPushEnabled：', self.isTelegramBotPushEnabled)
+        print('isTelegramBotPushEnabled：', self.isTelegramBotPushEnabled)
 
     # TelegramBot设置
     def telegramBotSettings(self):
@@ -281,12 +323,27 @@ class CoreUI(QMainWindow):
             self.telegramBotDialog.messagePlainTextEdit.setPlainText(message)
             self.telegramBotDialog.exec()
 
+    # 写入CSV文件存档
+    @staticmethod
+    def write_csv(csv_path, csv_data):
+        with open(csv_path, 'a+', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(csv_data)
+
+    # 创建CSV文件文档
+    @staticmethod
+    def create_csv(path):
+        with open(path, 'w', newline='') as file:
+            writer = csv.writer(file)
+            csv_head = ["学号", "姓名", "签到时间"]
+            writer.writerow(csv_head)
+
     # 设备响铃进程
     @staticmethod
     def bellProcess(queue):
-        logQueue = queue
+        logQueue = queue  # 参数是一个日志队列，用于同步所有进程的日志信息
         logQueue.put('Info：设备正在响铃...')
-        winsound.PlaySound('./alarm.wav', winsound.SND_FILENAME)
+        winsound.PlaySound('./alarm.wav', winsound.SND_FILENAME)  # 调用音频
 
     # TelegramBot推送进程
     @staticmethod
@@ -319,65 +376,23 @@ class CoreUI(QMainWindow):
         else:
             logQueue.put('Success：TelegramBot推送成功')
 
-    # 报警系统服务常驻，接收并处理报警信号
-    def recieveAlarm(self):
-        while True:
-            jobs = []
-            # print(self.alarmQueue.qsize())
-            if self.alarmQueue.qsize() > self.alarmSignalThreshold:  # 若报警信号触发超出既定计数，进行报警
-                if not os.path.isdir('./unknown'):
-                    os.makedirs('./unknown')
-                lastAlarmSignal = self.alarmQueue.get()
-                timestamp = lastAlarmSignal.get('timestamp')
-                img = lastAlarmSignal.get('img')
-                # 疑似陌生人脸，截屏存档
-                cv2.imwrite('./unknown/{}.jpg'.format(timestamp), img)
-                logging.info('报警信号触发超出预设计数，自动报警系统已被激活')
-                self.logQueue.put('Info：报警信号触发超出预设计数，自动报警系统已被激活')
-
-                # 是否进行响铃
-                if self.isBellEnabled:
-                    p1 = multiprocessing.Process(target=CoreUI.bellProcess, args=(self.logQueue,))
-                    p1.start()
-                    jobs.append(p1)
-
-                # 是否进行TelegramBot推送
-                if self.isTelegramBotPushEnabled:
-                    if os.path.isfile('./unknown/{}.jpg'.format(timestamp)):
-                        img = './unknown/{}.jpg'.format(timestamp)
-                    else:
-                        img = None
-                    p2 = multiprocessing.Process(target=CoreUI.telegramBotPushProcess, args=(self.logQueue, img))
-                    p2.start()
-                    jobs.append(p2)
-
-                # 等待本轮报警结束
-                for p in jobs:
-                    p.join()
-
-                # 重置报警信号
-                with self.alarmQueue.mutex:
-                    self.alarmQueue.queue.clear()
-            else:
-                continue
-
     # 系统日志服务常驻，接收并处理系统日志
     def receiveLog(self):
-        while True:
+        while True:  # 不断接受日志队列内容，只要不为空就输出信息
             data = self.logQueue.get()
             if data:
-                self.receiveLogSignal.emit(data)
+                self.receiveLogSignal.emit(data)  # 发射信号
             else:
                 continue
 
-    # LOG输出
+    # LOG输出，参数为日志文本信息
     def logOutput(self, log):
         # 获取当前系统时间
         time = datetime.now().strftime('[%Y/%m/%d %H:%M:%S]')
-        log = time + ' ' + log + '\n'
+        log = time + ' ' + log + '\n'  # 构造日志整体信息，包含时间以及主题内容
 
-        self.logTextEdit.moveCursor(QTextCursor.End)
-        self.logTextEdit.insertPlainText(log)
+        self.logTextEdit.moveCursor(QTextCursor.End)  # 移动光标置文本框底端
+        self.logTextEdit.insertPlainText(log)  # 插入日志文本内容
         self.logTextEdit.ensureCursorVisible()  # 自动滚屏
 
     # 系统对话框
@@ -406,6 +421,21 @@ class CoreUI(QMainWindow):
 
 
 # TelegramBot设置对话框
+def telegramBotTest(token, proxy_url):
+    try:
+        # 是否使用代理
+        if proxy_url:
+            proxy = telegram.utils.request.Request(proxy_url=proxy_url)
+            bot = telegram.Bot(token=token, request=proxy)
+        else:
+            bot = telegram.Bot(token=token)
+        bot.get_me()
+    except Exception as e:
+        return False
+    else:
+        return True
+
+
 class TelegramBotDialog(QDialog):
     def __init__(self):
         super(TelegramBotDialog, self).__init__()
@@ -431,7 +461,7 @@ class TelegramBotDialog(QDialog):
             self.okButton.setIcon(QIcon('./icons/error.png'))
             CoreUI.logQueue.put('Error：API Token、Telegram ID和消息内容为必填项')
         else:
-            ret = self.telegramBotTest(token, proxy_url)
+            ret = telegramBotTest(token, proxy_url)
             if ret:
                 cfg_file = './config/telegramBot.cfg'
                 cfg = ConfigParser()
@@ -455,52 +485,146 @@ class TelegramBotDialog(QDialog):
                 CoreUI.logQueue.put('Error：测试失败，无法更新TelegramBot配置')
 
     # TelegramBot 测试
-    def telegramBotTest(self, token, proxy_url):
-        try:
-            # 是否使用代理
-            if proxy_url:
-                proxy = telegram.utils.request.Request(proxy_url=proxy_url)
-                bot = telegram.Bot(token=token, request=proxy)
-            else:
-                bot = telegram.Bot(token=token)
-            bot.get_me()
-        except Exception as e:
-            return False
+
+
+# 报警线程
+class RecieveAlarm(QThread):
+
+    def __init__(self):
+        super(RecieveAlarm, self).__init__()
+        self.isRunning = True  # 线程状态
+        self.isBellEnabled = True  # 响铃开关状态
+        self.alarmSignalThreshold = 10  # 队列中挤压危险帧数量，超过即发出报警阈值
+        self.isTelegramBotPushEnabled = False  # 机器人bot通知
+
+    # 报警系统：是否允许设备响铃
+    def enableBell(self, coreUI):
+        if coreUI.bellCheckBox.isChecked():
+            self.isBellEnabled = True
+            coreUI.statusBar().showMessage('设备发声：开启')
         else:
-            return True
+            if self.isTelegramBotPushEnabled:
+                self.isBellEnabled = False
+                coreUI.statusBar().showMessage('设备发声：关闭')
+            else:
+                coreUI.logQueue.put('Error：操作失败，至少选择一种报警方式')
+                coreUI.bellCheckBox.setCheckState(Qt.Unchecked)
+                coreUI.bellCheckBox.setChecked(True)
+        # print('isBellEnabled：', self.isBellEnabled)
+
+    # 机器人推送
+    def enableTelegramBotPush(self, coreUI):
+        if coreUI.telegramBotPushCheckBox.isChecked():
+            self.isTelegramBotPushEnabled = True
+            coreUI.statusBar().showMessage('TelegramBot推送：开启')
+        else:
+            if self.isBellEnabled:
+                self.isTelegramBotPushEnabled = False
+                coreUI.statusBar().showMessage('TelegramBot推送：关闭')
+            else:
+                coreUI.logQueue.put('Error：操作失败，至少选择一种报警方式')
+                coreUI.telegramBotPushCheckBox.setCheckState(Qt.Unchecked)
+                coreUI.telegramBotPushCheckBox.setChecked(True)
+        # print('isTelegramBotPushEnabled：', self.isTelegramBotPushEnabled)
+
+    def run(self) -> None:
+        self.isRunning = True
+        while self.isRunning:
+            jobs = []
+            write_jobs = []
+            # print(self.alarmQueue.qsize())
+            if CoreUI.alarmQueue.qsize() > self.alarmSignalThreshold:  # 若报警信号触发超出既定计数，进行报警
+                if not os.path.isdir('./unknown'):  # 未知人员目录检查存在
+                    os.makedirs('./unknown')
+                lastAlarmSignal = CoreUI.alarmQueue.get()  # 获取报警队列的某个信号
+                timestamp, img = lastAlarmSignal.get('timestamp'), lastAlarmSignal.get('img')  # 获取报警时间戳、获取报警帧
+                # 疑似陌生人脸，截屏存档
+                cv2.imwrite('./unknown/{}.jpg'.format(timestamp), img)  # 存储截图,命名为时间戳
+                logging.info('报警信号触发超出预设计数，自动报警系统已被激活')
+                CoreUI.logQueue.put('Info：报警信号触发超出预设计数，自动报警系统已被激活')
+
+                # 响铃
+                # print('while running isBellEnabled:', self.isBellEnabled)
+                if self.isBellEnabled:
+                    p1 = multiprocessing.Process(target=CoreUI.bellProcess, args=(CoreUI.logQueue,))
+                    p1.start()  # 调用响铃进程
+                    jobs.append(p1)
+
+                # TelegramBot推送
+                # print('while running isTelegramBotPushEnabled:', self.isTelegramBotPushEnabled)
+                if self.isTelegramBotPushEnabled:
+                    if os.path.isfile('./unknown/{}.jpg'.format(timestamp)):
+                        img = './unknown/{}.jpg'.format(timestamp)
+                    else:
+                        img = None
+                    p2 = multiprocessing.Process(target=CoreUI.telegramBotPushProcess, args=(CoreUI.logQueue, img))
+                    p2.start()
+                    jobs.append(p2)
+
+                # 等待本轮报警结束
+                for p in jobs:
+                    p.join()
+
+                # 重置报警信号
+                with CoreUI.alarmQueue.mutex:  # 队列互斥锁
+                    CoreUI.alarmQueue.queue.clear()  # 清空报警队列
+
+            while CoreUI.saveQueue.qsize():
+                if not os.path.isdir('./attendance_csv'):  # 临时存储目录
+                    os.makedirs('./attendance_csv')
+                last_attendance_signal = CoreUI.saveQueue.get()
+                csv_path = os.path.join('./attendance_csv', last_attendance_signal.get('path') + '.csv')
+                if not os.path.exists(csv_path):
+                    CoreUI.create_csv(csv_path)
+                stu_id = last_attendance_signal.get('id')
+                zh_name = last_attendance_signal.get('name')
+                timestamp = last_attendance_signal.get('time')
+                csv_data = [stu_id, zh_name, timestamp]
+                CoreUI.write_csv(csv_path, csv_data)
+                message = '{} {} 同学签到成功！'.format(stu_id, zh_name)
+                CoreUI.logQueue.put(message)
+
+    def stop(self):
+        self.isRunning = False
+        self.quit()
+        self.wait()
 
 
 # OpenCV线程
 class FaceProcessingThread(QThread):
     def __init__(self):
         super(FaceProcessingThread, self).__init__()
-        self.isRunning = True
+        self.isRunning = True  # 线程运行标志
 
-        self.isFaceTrackerEnabled = True
-        self.isFaceRecognizerEnabled = False
-        self.isPanalarmEnabled = True
+        self.isFaceTrackerEnabled = True  # 人脸追踪
+        self.isFaceRecognizerEnabled = False  # 人脸识别
+        self.isPanalarmEnabled = True  # 报警系统
 
-        self.isDebugMode = False
-        self.confidenceThreshold = 50
-        self.autoAlarmThreshold = 65
+        self.isDebugMode = False  # 调试模式
+        self.confidenceThreshold = 55  # 置信度阈值
+        self.autoAlarmThreshold = 65  # 报警阈值
 
-        self.isEqualizeHistEnabled = False
+        self.isEqualizeHistEnabled = False  # 直方图均衡化
+
+        self.attendance_list = dict()  # 签到名单
+
+        self.init_attendance_time = datetime.now().strftime('%Y-%m-%d-%Hh%Mm%Ss')  # 初始时间
 
     # 是否开启人脸跟踪
     def enableFaceTracker(self, coreUI):
-        if coreUI.faceTrackerCheckBox.isChecked():
+        if coreUI.faceTrackerCheckBox.isChecked():  # 检查人脸追踪复选框状态
             self.isFaceTrackerEnabled = True
-            coreUI.statusBar().showMessage('人脸跟踪：开启')
+            coreUI.statusBar().showMessage('人脸跟踪：开启')  # 左下角状态提示栏
         else:
             self.isFaceTrackerEnabled = False
             coreUI.statusBar().showMessage('人脸跟踪：关闭')
 
     # 是否开启人脸识别
     def enableFaceRecognizer(self, coreUI):
-        if coreUI.faceRecognizerCheckBox.isChecked():
-            if self.isFaceTrackerEnabled:
+        if coreUI.faceRecognizerCheckBox.isChecked():  # 检查人脸识别复选框状态
+            if self.isFaceTrackerEnabled:  # 人脸识别要在人脸追踪的基础上启动
                 self.isFaceRecognizerEnabled = True
-                coreUI.statusBar().showMessage('人脸识别：开启')
+                coreUI.statusBar().showMessage('人脸识别：开启')  # 左下角状态提示栏
             else:
                 CoreUI.logQueue.put('Error：操作失败，请先开启人脸跟踪')
                 coreUI.faceRecognizerCheckBox.setCheckState(Qt.Unchecked)
@@ -548,176 +672,292 @@ class FaceProcessingThread(QThread):
             self.isEqualizeHistEnabled = False
             coreUI.statusBar().showMessage('直方图均衡化：关闭')
 
-    def run(self):
-        faceCascade = cv2.CascadeClassifier('./haarcascades/haarcascade_frontalface_default.xml')
+    def find_faces(self, gray):
+        # 执行直方图均衡化
+        if self.isEqualizeHistEnabled:
+            gray = cv2.equalizeHist(gray)
+        # 分类器进行人脸侦测,返回结果face是一个list保存矩形x,y,h,w
+        faces = faceCascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))
+        return faces
 
+    # OpenCV线程运行
+    def run(self):
+        # 遇到的坑：因为FaceProcess在初始化的时候才认为准备running，而FaceProcess不running就不会有处理过的帧进入队列
+        # 也就不会更新镜头信息帧到主界面，因此必须在打开摄像头时认为FaceProcess启动，改变stop时False状态
+        self.isRunning = True
         # 帧数、人脸ID初始化
         frameCounter = 0
         currentFaceID = 0
 
         # 人脸跟踪器字典初始化
-        faceTrackers = {}
+        faceTrackers = dict()
 
-        isTrainingDataLoaded = False
-        isDbConnected = False
+        isTrainingDataLoaded = False  # 预加载训练数据标记，检查一次过后即可不检查
+        isDbConnected = False  # 预连接数据库标记，连接一次后即可只检查标记
 
-        while self.isRunning:
-            if CoreUI.cap.isOpened():
-                ret, frame = CoreUI.cap.read()
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                # 是否执行直方图均衡化
-                if self.isEqualizeHistEnabled:
-                    gray = cv2.equalizeHist(gray)
-                faces = faceCascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))
+        detector = dlib.get_frontal_face_detector()
 
-                # 预加载数据文件
-                if not isTrainingDataLoaded and os.path.isfile(CoreUI.trainingData):
-                    recognizer = cv2.face.LBPHFaceRecognizer_create()
-                    recognizer.read(CoreUI.trainingData)
-                    isTrainingDataLoaded = True
-                if not isDbConnected and os.path.isfile(CoreUI.database):
-                    conn = sqlite3.connect(CoreUI.database)
-                    cursor = conn.cursor()
-                    isDbConnected = True
+        while self.isRunning and CoreUI.cap.isOpened():
+            ret, frame = CoreUI.cap.read()  # 从摄像头捕获帧
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # 灰度图
+            faces = self.find_faces(gray)
 
-                captureData = {}
-                realTimeFrame = frame.copy()
-                alarmSignal = {}
+            # 预加载数据文件
+            if not isTrainingDataLoaded and os.path.isfile(CoreUI.trainingData):  # 训练数据
+                recognizer = cv2.face.LBPHFaceRecognizer_create()  # LBPH人脸识别对象
+                recognizer.read(CoreUI.trainingData)  # 读取训练数据
+                isTrainingDataLoaded = True
 
-                # 人脸跟踪
-                # Reference：https://github.com/gdiepen/face-recognition
-                if self.isFaceTrackerEnabled:
+            if not isDbConnected:  # 学生信息数据库
+                # conn = sqlite3.connect(CoreUI.database)
+                # cursor = conn.cursor()
+                conn = pymysql.connect(host='localhost',
+                                       user='root',
+                                       password='970922',
+                                       db='mytest',
+                                       port=3306,
+                                       charset='utf8')
+                cursor = conn.cursor()
+                isDbConnected = True
 
-                    # 要删除的人脸跟踪器列表初始化
-                    fidsToDelete = []
+            captureData = {}  # 单帧识别结果
+            realTimeFrame = frame.copy()  # copy原始帧的识别帧
+            alarmSignal = {}  # 报警信号
 
-                    for fid in faceTrackers.keys():
-                        # 实时跟踪
-                        trackingQuality = faceTrackers[fid].update(realTimeFrame)
-                        # 如果跟踪质量过低，删除该人脸跟踪器
-                        if trackingQuality < 7:
-                            fidsToDelete.append(fid)
+            # 人脸跟踪
+            # Reference：https://github.com/gdiepen/face-recognition
+            if self.isFaceTrackerEnabled:
 
-                    # 删除跟踪质量过低的人脸跟踪器
-                    for fid in fidsToDelete:
-                        faceTrackers.pop(fid, None)
+                # 要删除的人脸跟踪器列表初始化
+                fidsToDelete = []
 
-                    for (_x, _y, _w, _h) in faces:
-                        isKnown = False
+                # 更新人脸追踪器，并删除低质量人脸
+                for fid in faceTrackers.keys():
+                    # 实时跟踪下一帧
+                    trackingQuality = faceTrackers[fid].update(realTimeFrame)
+                    # 如果跟踪质量过低，删除该人脸跟踪器
+                    if trackingQuality < 7:
+                        fidsToDelete.append(fid)
 
-                        if self.isFaceRecognizerEnabled:
-                            cv2.rectangle(realTimeFrame, (_x, _y), (_x + _w, _y + _h), (232, 138, 30), 2)
-                            face_id, confidence = recognizer.predict(gray[_y:_y + _h, _x:_x + _w])
-                            logging.debug('face_id：{}，confidence：{}'.format(face_id, confidence))
+                # 删除跟踪质量过低的人脸跟踪器，对多目标人脸追踪器更新。实时删除和增加
+                for fid in fidsToDelete:
+                    faceTrackers.pop(fid, None)
 
-                            if self.isDebugMode:
-                                CoreUI.logQueue.put('Debug -> face_id：{}，confidence：{}'.format(face_id, confidence))
+                # 遍历所有侦测到的人脸坐标
+                for (_x, _y, _w, _h) in faces:
+                    isKnown = False
 
-                            # 从数据库中获取识别人脸的身份信息
-                            try:
-                                cursor.execute("SELECT * FROM users WHERE face_id=?", (face_id,))
-                                result = cursor.fetchall()
-                                if result:
-                                    en_name = result[0][3]
-                                else:
-                                    raise Exception
-                            except Exception as e:
-                                logging.error('读取数据库异常，系统无法获取Face ID为{}的身份信息'.format(face_id))
-                                CoreUI.logQueue.put('Error：读取数据库异常，系统无法获取Face ID为{}的身份信息'.format(face_id))
-                                en_name = ''
+                    # 人脸识别
+                    if self.isFaceRecognizerEnabled:
+                        # 蓝色识别框（RGB三通道色参数其实顺序是BGR）
+                        cv2.rectangle(realTimeFrame, (_x, _y), (_x + _w, _y + _h), (232, 138, 30), 2)
+                        face_id, confidence = recognizer.predict(gray[_y:_y + _h, _x:_x + _w])
+                        # 预测函数，识别后返回face ID和差异程度，差异程度越小越相似
+                        logging.debug('face_id：{}，confidence：{}'.format(face_id, confidence))
 
-                            # 若置信度评分小于置信度阈值，认为是可靠识别
-                            if confidence < self.confidenceThreshold:
-                                isKnown = True
-                                cv2.putText(realTimeFrame, en_name, (_x - 5, _y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1,
-                                            (0, 97, 255), 2)
+                        if self.isDebugMode:  # 测试模式输出每帧识别信息
+                            CoreUI.logQueue.put('Debug -> face_id：{}，confidence：{}'.format(face_id, confidence))
+
+                        # 从数据库中获取识别人脸的身份信息
+                        try:
+                            cursor.execute("SELECT * FROM users WHERE face_id=%s", (face_id,))
+                            result = cursor.fetchall()
+                            if result:
+                                stu_id = str(result[0][0])  # 学号
+                                zh_name = result[0][2]  # 中文名
+                                en_name = result[0][3]  # 英文名
                             else:
-                                # 若置信度评分大于置信度阈值，该人脸可能是陌生人
-                                cv2.putText(realTimeFrame, 'unknown', (_x - 5, _y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1,
-                                            (0, 0, 255), 2)
-                                # 若置信度评分超出自动报警阈值，触发报警信号
-                                if confidence > self.autoAlarmThreshold:
-                                    # 检测报警系统是否开启
-                                    if self.isPanalarmEnabled:
-                                        alarmSignal['timestamp'] = datetime.now().strftime('%Y%m%d%H%M%S')
-                                        alarmSignal['img'] = realTimeFrame
-                                        CoreUI.alarmQueue.put(alarmSignal)
-                                        logging.info('系统发出了报警信号')
+                                raise Exception
+                        except Exception as e:
+                            logging.error('读取数据库异常，系统无法获取Face ID为{}的身份信息'.format(face_id))
+                            CoreUI.logQueue.put('Error：读取数据库异常，系统无法获取Face ID为{}的身份信息'.format(face_id))
+                            stu_id = ''
+                            zh_name = ''
+                            en_name = ''
 
-                        # 帧数自增
-                        frameCounter += 1
+                        # 若置信度评分小于置信度阈值，认为是可靠识别
+                        if confidence < self.confidenceThreshold:
+                            isKnown = True
+                            stu_statu = self.attendance_list.get(stu_id, 0)
+                            if stu_statu:
+                                realTimeFrame = cv2ImgAddText(realTimeFrame, '已签到', _x + _w - 45, _y - 10, (0, 97, 255))
+                            else:
+                                attendance_time = datetime.now()
+                                self.attendance_list[stu_id] = attendance_time.strftime('%H:%M:%S')
+                                csv_data = {
+                                    'path': self.init_attendance_time,
+                                    'id': stu_id,
+                                    'name': zh_name,
+                                    'time': attendance_time.strftime("%Y/%m/%d-%H:%M:%S"),
+                                }
+                                CoreUI.saveQueue.put(csv_data)
+                            # 置信度标签
+                            cv2.putText(realTimeFrame, str(round(100 - confidence, 3)), (_x - 5, _y + _h + 18),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                                        (0, 255, 255), 1)
+                            # 蓝色英文名标签
+                            cv2.putText(realTimeFrame, en_name, (_x - 5, _y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                                        (0, 97, 255), 2)
+                            # 蓝色中文名标签
+                            realTimeFrame = cv2ImgAddText(realTimeFrame, zh_name, _x - 5, _y - 10, (0, 97, 255))
+                        else:
+                            cv2.putText(realTimeFrame, str(round(100 - confidence, 3)), (_x - 5, _y + _h + 18),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                                        (0, 50, 255), 1)
+                            # 若置信度评分大于置信度阈值，该人脸可能是陌生人
+                            cv2.putText(realTimeFrame, 'unknown', (_x - 5, _y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                                        (0, 0, 255), 2)
+                            # 若置信度评分超出自动报警阈值，触发报警信号
+                            if confidence > self.autoAlarmThreshold:
+                                # 报警系统是否开启
+                                if self.isPanalarmEnabled:  # 记录报警时间戳和当前帧
+                                    alarmSignal['timestamp'] = datetime.now().strftime('%Y%m%d%H%M%S')
+                                    alarmSignal['img'] = realTimeFrame
+                                    CoreUI.alarmQueue.put(alarmSignal)  # 报警队列插入该信号
+                                    logging.info('系统发出了报警信号')
 
-                        # 每读取10帧，检测跟踪器的人脸是否还在当前画面内
-                        if frameCounter % 10 == 0:
-                            # 这里必须转换成int类型，因为OpenCV人脸检测返回的是numpy.int32类型，
-                            # 而dlib人脸跟踪器要求的是int类型
-                            x = int(_x)
-                            y = int(_y)
-                            w = int(_w)
-                            h = int(_h)
+                    # 帧数计数器
+                    frameCounter += 1
 
-                            # 计算中心点
-                            x_bar = x + 0.5 * w
-                            y_bar = y + 0.5 * h
+                    # 每读取10帧，检测跟踪器的人脸是否还在当前画面内
+                    if frameCounter % 10 == 0:
+                        frameCounter = 0  # 防止爆int
+                        # 这里必须转换成int类型，因为OpenCV人脸检测返回的是numpy.int32类型，
+                        # 而dlib人脸跟踪器要求的是int类型
+                        x = int(_x)
+                        y = int(_y)
+                        w = int(_w)
+                        h = int(_h)
 
-                            # matchedFid表征当前检测到的人脸是否已被跟踪
-                            matchedFid = None
+                        # 计算中心点
+                        x_bar = x + 0.5 * w
+                        y_bar = y + 0.5 * h
 
-                            for fid in faceTrackers.keys():
-                                # 获取人脸跟踪器的位置
-                                # tracked_position 是 dlib.drectangle 类型，用来表征图像的矩形区域，坐标是浮点数
-                                tracked_position = faceTrackers[fid].get_position()
-                                # 浮点数取整
-                                t_x = int(tracked_position.left())
-                                t_y = int(tracked_position.top())
-                                t_w = int(tracked_position.width())
-                                t_h = int(tracked_position.height())
+                        # matchedFid表征当前检测到的人脸是否已被跟踪，未赋值则
+                        matchedFid = None
 
-                                # 计算人脸跟踪器的中心点
-                                t_x_bar = t_x + 0.5 * t_w
-                                t_y_bar = t_y + 0.5 * t_h
+                        # 将OpenCV中haar分类器获取的人脸位置与dlib人脸追踪器的位置做对比
+                        # 上方坐标表示分类器检测结果，下方坐标表示遍历多目标追踪器检查有没有坐标上重合的脸，如果有，matchFid被赋值，说明该脸已追踪
+                        # 如果没有，说明该分类器捕获的脸没有被追踪，那么多目标追踪器需要分配新的fid和追踪器实例
 
-                                # 如果当前检测到的人脸中心点落在人脸跟踪器内，且人脸跟踪器的中心点也落在当前检测到的人脸内
-                                # 说明当前人脸已被跟踪
-                                if ((t_x <= x_bar <= (t_x + t_w)) and (t_y <= y_bar <= (t_y + t_h)) and
-                                        (x <= t_x_bar <= (x + w)) and (y <= t_y_bar <= (y + h))):
-                                    matchedFid = fid
+                        # 遍历人脸追踪器的face_id
+                        for fid in faceTrackers.keys():
+                            # 获取人脸跟踪器的位置
+                            # tracked_position 是 dlib.drectangle 类型，用来表征图像的矩形区域，坐标是浮点数
+                            tracked_position = faceTrackers[fid].get_position()
+                            # 浮点数取整
+                            t_x = int(tracked_position.left())
+                            t_y = int(tracked_position.top())
+                            t_w = int(tracked_position.width())
+                            t_h = int(tracked_position.height())
 
-                            # 如果当前检测到的人脸是陌生人脸且未被跟踪
-                            if not isKnown and matchedFid is None:
-                                # 创建一个人脸跟踪器
-                                tracker = dlib.correlation_tracker()
-                                # 锁定跟踪范围
-                                tracker.start_track(realTimeFrame, dlib.rectangle(x - 5, y - 10, x + w + 5, y + h + 10))
-                                # 将该人脸跟踪器分配给当前检测到的人脸
-                                faceTrackers[currentFaceID] = tracker
-                                # 人脸ID自增
-                                currentFaceID += 1
+                            # 计算人脸跟踪器的中心点
+                            t_x_bar = t_x + 0.5 * t_w
+                            t_y_bar = t_y + 0.5 * t_h
 
-                    # 使用当前的人脸跟踪器，更新画面，输出跟踪结果
-                    for fid in faceTrackers.keys():
-                        tracked_position = faceTrackers[fid].get_position()
+                            # 如果当前检测到的人脸中心点落在人脸跟踪器内，且人脸跟踪器的中心点也落在当前检测到的人脸内
+                            # 说明当前人脸已被跟踪
+                            if ((t_x <= x_bar <= (t_x + t_w)) and (t_y <= y_bar <= (t_y + t_h)) and
+                                    (x <= t_x_bar <= (x + w)) and (y <= t_y_bar <= (y + h))):
+                                matchedFid = fid
 
-                        t_x = int(tracked_position.left())
-                        t_y = int(tracked_position.top())
-                        t_w = int(tracked_position.width())
-                        t_h = int(tracked_position.height())
+                        # 如果当前检测到的人脸是陌生人脸且未被跟踪
+                        if not isKnown and matchedFid is None:
+                            # 创建一个追踪器
+                            tracker = dlib.correlation_tracker()  # 多目标追踪器
+                            # 设置图片中被追踪物体的范围，也就是一个矩形框
+                            tracker.start_track(realTimeFrame, dlib.rectangle(x - 5, y - 10, x + w + 5, y + h + 10))
+                            # 将该人脸跟踪器分配给当前检测到的人脸
+                            faceTrackers[currentFaceID] = tracker
+                            # 人脸ID自增
+                            currentFaceID += 1
 
-                        # 在跟踪帧中圈出人脸
-                        cv2.rectangle(realTimeFrame, (t_x, t_y), (t_x + t_w, t_y + t_h), (0, 0, 255), 2)
-                        cv2.putText(realTimeFrame, 'tracking...', (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255),
-                                    2)
+                # 遍历人脸跟踪器，更新单帧
+                for fid in faceTrackers.keys():
+                    tracked_position = faceTrackers[fid].get_position()
 
-                captureData['originFrame'] = frame
-                captureData['realTimeFrame'] = realTimeFrame
-                CoreUI.captureQueue.put(captureData)
+                    t_x = int(tracked_position.left())
+                    t_y = int(tracked_position.top())
+                    t_w = int(tracked_position.width())
+                    t_h = int(tracked_position.height())
 
-            else:
-                continue
+                    # 在跟踪帧中绘制方框圈出人脸，红框
+                    cv2.rectangle(realTimeFrame, (t_x, t_y), (t_x + t_w, t_y + t_h), (0, 0, 255), 2)
+                    # 图像/添加的文字/左上角坐标/字体/字体大小/颜色/字体粗细
+                    cv2.putText(realTimeFrame, 'tracking...', (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255),
+                                1)
+
+            # dlib人脸关键点识别,绿框
+            face_rects, scores, idx = detector.run(realTimeFrame, 0)
+            for d in face_rects:
+                x1 = d.left()
+                y1 = d.top()
+                x2 = d.right()
+                y2 = d.bottom()
+
+                # 绘制出侦测人臉的矩形范围,绿框
+                cv2.rectangle(realTimeFrame, (x1, y1), (x2, y2), (0, 255, 0), 4, cv2.LINE_AA)
+
+                # 给68特征点识别取得一个转换顏色的frame
+                landmarks_frame = cv2.cvtColor(realTimeFrame, cv2.COLOR_BGR2RGB)
+
+                # 找出特征点位置
+                shape = predictor(landmarks_frame, d)
+
+                # 绘制68个特征点
+                for i in range(5):
+                    cv2.circle(realTimeFrame, (shape.part(i).x, shape.part(i).y), 3, (0, 0, 255), 2)
+                    cv2.putText(realTimeFrame, str(i), (shape.part(i).x, shape.part(i).y), cv2.FONT_HERSHEY_COMPLEX,
+                                0.5,
+                                (255, 0, 0), 1)
+
+            captureData['originFrame'] = frame
+            captureData['realTimeFrame'] = realTimeFrame
+            CoreUI.captureQueue.put(captureData)
+
+    def commit_DB(self):
+        conn = pymysql.connect(host='localhost',
+                               user='root',
+                               password='970922',
+                               db='mytest',
+                               port=3306,
+                               charset='utf8')
+        cursor = conn.cursor()
+        try:
+            if not DataRecordUI.table_exists(cursor, self.init_attendance_time):  # 检查学生信息数据库
+                sql = '''CREATE TABLE IF NOT EXISTS `%s` (
+                                  stu_id VARCHAR(20) PRIMARY KEY NOT NULL,
+                                  cn_name VARCHAR(30) NOT NULL,
+                                  attendance int(2) DEFAULT 0,
+                                  attendance_time TIME DEFAULT NULL
+                                  )''' % self.init_attendance_time
+                cursor.execute(sql)  # 单次签到建表
+            cursor.execute('SELECT * FROM users')
+            result = cursor.fetchall()
+            for item in result:
+                sql_judge = 'select stu_id from `%s` where stu_id="%s"' % (self.init_attendance_time, item[0])
+                cursor.execute(sql_judge)  # 重复插入判定
+                judge_id = cursor.fetchone()
+                if judge_id is None:
+                    insert_sql = '''INSERT INTO `%s` (stu_id, cn_name, attendance, attendance_time) VALUES ("%s", "%s", "%s", "%s")''' % (
+                        self.init_attendance_time, item[0], item[2], 1 if item[0] in self.attendance_list else 0,
+                        self.attendance_list.get(item[0], 0))
+                    cursor.execute(insert_sql)
+        except Exception as e:
+            logging.error('读取数据库异常，无法完成数据存储')
+            CoreUI.logQueue.put('Error：数据存储失败')
+            print(e)
+        else:
+            CoreUI.logQueue.put('Success：数据存储完成')
+        finally:
+            cursor.close()
+            conn.commit()
+            conn.close()
 
     # 停止OpenCV线程
     def stop(self):
         self.isRunning = False
+        self.commit_DB()
         self.quit()
         self.wait()
 

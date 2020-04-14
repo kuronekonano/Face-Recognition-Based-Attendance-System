@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1011</width>
-    <height>601</height>
+    <width>1528</width>
+    <height>856</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -18,8 +18,8 @@
     <rect>
      <x>10</x>
      <y>10</y>
-     <width>641</width>
-     <height>581</height>
+     <width>881</width>
+     <height>841</height>
     </rect>
    </property>
    <property name="title">
@@ -34,10 +34,10 @@
    <widget class="QLabel" name="faceDetectCaptureLabel">
     <property name="geometry">
      <rect>
-      <x>0</x>
-      <y>50</y>
-      <width>640</width>
-      <height>480</height>
+      <x>10</x>
+      <y>70</y>
+      <width>861</width>
+      <height>761</height>
      </rect>
     </property>
     <property name="frameShape">
@@ -50,66 +50,13 @@
      <set>Qt::AlignCenter</set>
     </property>
    </widget>
-   <widget class="QWidget" name="layoutWidget_2">
-    <property name="geometry">
-     <rect>
-      <x>0</x>
-      <y>540</y>
-      <width>641</width>
-      <height>31</height>
-     </rect>
-    </property>
-    <layout class="QHBoxLayout" name="faceRecordHorizontalLayout">
-     <item>
-      <widget class="QPushButton" name="startFaceRecordButton">
-       <property name="enabled">
-        <bool>true</bool>
-       </property>
-       <property name="text">
-        <string>开始采集人脸数据</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <layout class="QHBoxLayout" name="faceRecordCountHorizontalLayout">
-       <item>
-        <widget class="QLabel" name="faceRecordCountLabel">
-         <property name="text">
-          <string>系统已采集帧数：</string>
-         </property>
-         <property name="alignment">
-          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLCDNumber" name="faceRecordCountLcdNum">
-         <property name="segmentStyle">
-          <enum>QLCDNumber::Flat</enum>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </item>
-     <item>
-      <widget class="QPushButton" name="enableFaceRecordButton">
-       <property name="enabled">
-        <bool>false</bool>
-       </property>
-       <property name="text">
-        <string>采集当前捕获帧</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
-   </widget>
    <widget class="QWidget" name="layoutWidget">
     <property name="geometry">
      <rect>
-      <x>1</x>
-      <y>21</y>
-      <width>641</width>
-      <height>27</height>
+      <x>0</x>
+      <y>20</y>
+      <width>871</width>
+      <height>41</height>
      </rect>
     </property>
     <layout class="QHBoxLayout" name="controlHorizontalLayout">
@@ -143,17 +90,14 @@
      </item>
     </layout>
    </widget>
-   <zorder>layoutWidget_2</zorder>
-   <zorder>faceDetectCaptureLabel</zorder>
-   <zorder>layoutWidget</zorder>
   </widget>
   <widget class="QGroupBox" name="dataGroupBox">
    <property name="geometry">
     <rect>
-     <x>660</x>
+     <x>900</x>
      <y>10</y>
-     <width>341</width>
-     <height>581</height>
+     <width>621</width>
+     <height>841</height>
     </rect>
    </property>
    <property name="title">
@@ -166,9 +110,9 @@
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>130</y>
+      <y>400</y>
       <width>321</width>
-      <height>231</height>
+      <height>431</height>
      </rect>
     </property>
     <property name="title">
@@ -178,9 +122,9 @@
      <property name="geometry">
       <rect>
        <x>10</x>
-       <y>60</y>
+       <y>50</y>
        <width>301</width>
-       <height>161</height>
+       <height>371</height>
       </rect>
      </property>
      <property name="title">
@@ -192,7 +136,7 @@
         <x>10</x>
         <y>20</y>
         <width>281</width>
-        <height>91</height>
+        <height>301</height>
        </rect>
       </property>
       <layout class="QHBoxLayout" name="infoConfirmHorizontalLayout">
@@ -230,7 +174,85 @@
             <enum>QFrame::NoFrame</enum>
            </property>
            <property name="text">
-            <string>汉语拼音：</string>
+            <string>英文名：</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="MajorLabel">
+           <property name="frameShape">
+            <enum>QFrame::NoFrame</enum>
+           </property>
+           <property name="text">
+            <string>专业：</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="GradeLabel">
+           <property name="frameShape">
+            <enum>QFrame::NoFrame</enum>
+           </property>
+           <property name="text">
+            <string>入学年份：</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="ClassLabel">
+           <property name="frameShape">
+            <enum>QFrame::NoFrame</enum>
+           </property>
+           <property name="text">
+            <string>班级：</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="SexLabel">
+           <property name="frameShape">
+            <enum>QFrame::NoFrame</enum>
+           </property>
+           <property name="text">
+            <string>性别：</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="ProvinceLabel">
+           <property name="frameShape">
+            <enum>QFrame::NoFrame</enum>
+           </property>
+           <property name="text">
+            <string>生源地：</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="NationLabel">
+           <property name="frameShape">
+            <enum>QFrame::NoFrame</enum>
+           </property>
+           <property name="text">
+            <string>民族：</string>
            </property>
            <property name="alignment">
             <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -271,6 +293,66 @@
            </property>
           </widget>
          </item>
+         <item>
+          <widget class="QLineEdit" name="MajorLineEdit">
+           <property name="focusPolicy">
+            <enum>Qt::StrongFocus</enum>
+           </property>
+           <property name="readOnly">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="GradeLineEdit">
+           <property name="focusPolicy">
+            <enum>Qt::StrongFocus</enum>
+           </property>
+           <property name="readOnly">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="ClassLineEdit">
+           <property name="focusPolicy">
+            <enum>Qt::StrongFocus</enum>
+           </property>
+           <property name="readOnly">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="SexLineEdit">
+           <property name="focusPolicy">
+            <enum>Qt::StrongFocus</enum>
+           </property>
+           <property name="readOnly">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="ProvinceLineEdit">
+           <property name="focusPolicy">
+            <enum>Qt::StrongFocus</enum>
+           </property>
+           <property name="readOnly">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="NationLineEdit">
+           <property name="focusPolicy">
+            <enum>Qt::StrongFocus</enum>
+           </property>
+           <property name="readOnly">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
         </layout>
        </item>
       </layout>
@@ -282,7 +364,7 @@
       <property name="geometry">
        <rect>
         <x>10</x>
-        <y>120</y>
+        <y>330</y>
         <width>281</width>
         <height>31</height>
        </rect>
@@ -301,8 +383,8 @@
      </property>
      <property name="geometry">
       <rect>
-       <x>21</x>
-       <y>23</y>
+       <x>20</x>
+       <y>20</y>
        <width>281</width>
        <height>31</height>
       </rect>
@@ -315,36 +397,13 @@
      </property>
     </widget>
    </widget>
-   <widget class="QGroupBox" name="logGroupBox">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>370</y>
-      <width>321</width>
-      <height>201</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>系统日志</string>
-    </property>
-    <widget class="QTextEdit" name="logTextEdit">
-     <property name="geometry">
-      <rect>
-       <x>0</x>
-       <y>20</y>
-       <width>321</width>
-       <height>181</height>
-      </rect>
-     </property>
-    </widget>
-   </widget>
    <widget class="QGroupBox" name="dbGroupBox">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>20</y>
-      <width>321</width>
-      <height>101</height>
+      <x>340</x>
+      <y>400</y>
+      <width>271</width>
+      <height>431</height>
      </rect>
     </property>
     <property name="title">
@@ -353,10 +412,10 @@
     <widget class="QWidget" name="layoutWidget_4">
      <property name="geometry">
       <rect>
-       <x>20</x>
-       <y>60</y>
-       <width>281</width>
-       <height>31</height>
+       <x>10</x>
+       <y>300</y>
+       <width>251</width>
+       <height>81</height>
       </rect>
      </property>
      <layout class="QHBoxLayout" name="dbUserCountHorizontalLayout">
@@ -382,16 +441,158 @@
     <widget class="QPushButton" name="initDbButton">
      <property name="geometry">
       <rect>
-       <x>21</x>
-       <y>20</y>
-       <width>281</width>
-       <height>31</height>
+       <x>10</x>
+       <y>30</y>
+       <width>241</width>
+       <height>41</height>
       </rect>
      </property>
      <property name="text">
-      <string>初始化数据库</string>
+      <string>连接数据库</string>
      </property>
     </widget>
+    <widget class="QPushButton" name="ExcelpathButton">
+     <property name="enabled">
+      <bool>false</bool>
+     </property>
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>90</y>
+       <width>241</width>
+       <height>41</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>导入表格文件路径</string>
+     </property>
+    </widget>
+    <widget class="QPushButton" name="ImagepathButton">
+     <property name="enabled">
+      <bool>false</bool>
+     </property>
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>150</y>
+       <width>241</width>
+       <height>41</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>导入图片文件路径</string>
+     </property>
+    </widget>
+    <widget class="QPushButton" name="StartimportButton">
+     <property name="enabled">
+      <bool>true</bool>
+     </property>
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>210</y>
+       <width>241</width>
+       <height>41</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>开始导入</string>
+     </property>
+    </widget>
+   </widget>
+   <widget class="QGroupBox" name="logGroupBox">
+    <property name="geometry">
+     <rect>
+      <x>20</x>
+      <y>130</y>
+      <width>581</width>
+      <height>261</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>系统日志</string>
+    </property>
+    <widget class="QTextEdit" name="logTextEdit">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>20</y>
+       <width>561</width>
+       <height>231</height>
+      </rect>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </widget>
+   <widget class="QWidget" name="layoutWidget_2">
+    <property name="geometry">
+     <rect>
+      <x>20</x>
+      <y>20</y>
+      <width>571</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <layout class="QHBoxLayout" name="faceRecordHorizontalLayout">
+     <item>
+      <layout class="QHBoxLayout" name="faceRecordCountHorizontalLayout">
+       <item>
+        <widget class="QLabel" name="faceRecordCountLabel">
+         <property name="frameShape">
+          <enum>QFrame::Panel</enum>
+         </property>
+         <property name="text">
+          <string>系统已采集帧数：</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLCDNumber" name="faceRecordCountLcdNum">
+         <property name="segmentStyle">
+          <enum>QLCDNumber::Flat</enum>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+    </layout>
+   </widget>
+   <widget class="QPushButton" name="enableFaceRecordButton">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>380</x>
+      <y>90</y>
+      <width>209</width>
+      <height>28</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>采集当前捕获帧</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="startFaceRecordButton">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>30</x>
+      <y>90</y>
+      <width>221</width>
+      <height>28</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>开始采集人脸数据</string>
+    </property>
    </widget>
   </widget>
  </widget>

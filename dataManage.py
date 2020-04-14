@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-# Author: winterssy <winterssy@foxmail.com>
+# Author: kuronekonano <god772525182@gmail.com>
 
 import cv2
 import numpy as np
+import pymysql
 
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, QThread
 from PyQt5.QtGui import QIcon, QTextCursor
-from PyQt5.QtWidgets import QApplication, QWidget, QMessageBox, QTableWidgetItem, QAbstractItemView
+from PyQt5.QtWidgets import QApplication, QWidget, QMessageBox, QTableWidgetItem, QAbstractItemView, QProgressBar, QDialog
 from PyQt5.uic import loadUi
 
 import logging
@@ -19,7 +20,7 @@ import threading
 import multiprocessing
 
 from datetime import datetime
-
+from dataRecord import DataRecordUI
 
 # 自定义数据库记录不存在异常
 class RecordNotFound(Exception):
@@ -34,13 +35,13 @@ class DataManageUI(QWidget):
         super(DataManageUI, self).__init__()
         loadUi('./ui/DataManage.ui', self)
         self.setWindowIcon(QIcon('./icons/icon.png'))
-        self.setFixedSize(931, 577)
+        self.setFixedSize(1451, 878)
 
         # 设置tableWidget只读，不允许修改
         self.tableWidget.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
         # 数据库
-        self.database = './FaceBase.db'
+        self.database = 'users'
         self.datasets = './datasets'
         self.isDbReady = False
         self.initDbButton.clicked.connect(self.initDb)
@@ -71,29 +72,37 @@ class DataManageUI(QWidget):
 
     # 初始化/刷新数据库
     def initDb(self):
-        # 刷新前重置tableWidget
+        # 刷新前清空tableWidget
         while self.tableWidget.rowCount() > 0:
             self.tableWidget.removeRow(0)
         try:
-            if not os.path.isfile(self.database):
-                raise FileNotFoundError
-
-            conn = sqlite3.connect(self.database)
+            conn = pymysql.connect(host='localhost',
+                                   user='root',
+                                   password='970922',
+                                   db='mytest',
+                                   port=3306,
+                                   charset='utf8')
             cursor = conn.cursor()
 
-            res = cursor.execute('SELECT * FROM users')
-            for row_index, row_data in enumerate(res):
-                self.tableWidget.insertRow(row_index)
-                for col_index, col_data in enumerate(row_data):
+            if not DataRecordUI.table_exists(cursor, self.database):
+                raise FileNotFoundError
+
+            cursor.execute('SELECT * FROM users')
+            conn.commit()
+            stu_data = cursor.fetchall()
+            # print(stu_data)
+            for row_index, row_data in enumerate(stu_data):
+                self.tableWidget.insertRow(row_index)  # 插入行
+                for col_index, col_data in enumerate(row_data):  # 插入列
                     self.tableWidget.setItem(row_index, col_index, QTableWidgetItem(str(col_data)))
-            cursor.execute('SELECT Count(*) FROM users')
+            cursor.execute('SELECT Count(*) FROM users')  # 学生计数
             result = cursor.fetchone()
             dbUserCount = result[0]
         except FileNotFoundError:
-            logging.error('系统找不到数据库文件{}'.format(self.database))
+            logging.error('系统找不到数据库表{}'.format(self.database))
             self.isDbReady = False
             self.initDbButton.setIcon(QIcon('./icons/error.png'))
-            self.logQueue.put('Error：未发现数据库文件，你可能未进行人脸采集')
+            self.logQueue.put('Error：未发现数据库，你可能未进行人脸采集')
         except Exception:
             logging.error('读取数据库异常，无法完成数据库初始化')
             self.isDbReady = False
@@ -119,11 +128,18 @@ class DataManageUI(QWidget):
     # 查询用户
     def queryUser(self):
         stu_id = self.queryUserLineEdit.text().strip()
-        conn = sqlite3.connect(self.database)
+        conn = pymysql.connect(host='localhost',
+                               user='root',
+                               password='970922',
+                               db='mytest',
+                               port=3306,
+                               charset='utf8')
         cursor = conn.cursor()
+        # conn = sqlite3.connect(self.database)
+        # cursor = conn.cursor()
 
         try:
-            cursor.execute('SELECT * FROM users WHERE stu_id=?', (stu_id,))
+            cursor.execute('SELECT * FROM users WHERE stu_id=%s', (stu_id,))
             ret = cursor.fetchall()
             if not ret:
                 raise RecordNotFound
@@ -157,11 +173,18 @@ class DataManageUI(QWidget):
 
         if ret == QMessageBox.Yes:
             stu_id = self.stuIDLineEdit.text()
-            conn = sqlite3.connect(self.database)
+            conn = pymysql.connect(host='localhost',
+                                   user='root',
+                                   password='970922',
+                                   db='mytest',
+                                   port=3306,
+                                   charset='utf8')
             cursor = conn.cursor()
+            # conn = sqlite3.connect(self.database)
+            # cursor = conn.cursor()
 
             try:
-                cursor.execute('DELETE FROM users WHERE stu_id=?', (stu_id,))
+                cursor.execute('DELETE FROM users WHERE stu_id=%s', (stu_id,))
             except Exception as e:
                 cursor.close()
                 logging.error('无法从数据库中删除{}'.format(stu_id))
@@ -193,53 +216,61 @@ class DataManageUI(QWidget):
 
     # 检测人脸
     def detectFace(self, img):
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        if self.isEqualizeHistEnabled:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # 灰度图
+        if self.isEqualizeHistEnabled:  # 直方均衡化
             gray = cv2.equalizeHist(gray)
-        face_cascade = cv2.CascadeClassifier('./haarcascades/haarcascade_frontalface_default.xml')
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5, minSize=(90, 90))
+        face_cascade = cv2.CascadeClassifier('./haarcascades/haarcascade_frontalface_default.xml')  # 分类器
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5, minSize=(90, 90))  # 抠脸
 
-        if (len(faces) == 0):
+        if len(faces) == 0:
             return None, None
         (x, y, w, h) = faces[0]
         return gray[y:y + w, x:x + h], faces[0]
 
-    # 准备图片数据
+    # 准备图片数据，参数为数据集路径
     def prepareTrainingData(self, data_folder_path):
-        dirs = os.listdir(data_folder_path)
+        dirs = os.listdir(data_folder_path)  # 返回指定的文件夹包含的文件或文件夹的名字的列表
         faces = []
         labels = []
 
         face_id = 1
-        conn = sqlite3.connect(self.database)
+
+        conn = pymysql.connect(host='localhost',
+                               user='root',
+                               password='970922',
+                               db='mytest',
+                               port=3306,
+                               charset='utf8')
         cursor = conn.cursor()
+        # conn = sqlite3.connect(self.database)  # 连接数据库
+        # cursor = conn.cursor()
 
         # 遍历人脸库
         for dir_name in dirs:
-            if not dir_name.startswith('stu_'):
+            if not dir_name.startswith('stu_'):  # 跳过不合法的图片集
                 continue
-            stu_id = dir_name.replace('stu_', '')
+            stu_id = dir_name.replace('stu_', '')  # 获取图片集对应的学号
             try:
-                cursor.execute('SELECT * FROM users WHERE stu_id=?', (stu_id,))
+                cursor.execute('SELECT * FROM users WHERE stu_id=%s', (stu_id,))  # 根据学号查询学生信息
                 ret = cursor.fetchall()
                 if not ret:
-                    raise RecordNotFound
-                cursor.execute('UPDATE users SET face_id=? WHERE stu_id=?', (face_id, stu_id,))
+                    raise RecordNotFound  # 在try里raise错误类型，在except里再处理
+                cursor.execute('UPDATE users SET face_id=%s WHERE stu_id=%s', (face_id, stu_id,))  # 对可以训练的人脸设置face_id
             except RecordNotFound:
                 logging.warning('数据库中找不到学号为{}的用户记录'.format(stu_id))
                 self.logQueue.put('发现学号为{}的人脸数据，但数据库中找不到相应记录，已忽略'.format(stu_id))
                 continue
-            subject_dir_path = data_folder_path + '/' + dir_name
-            subject_images_names = os.listdir(subject_dir_path)
+            subject_dir_path = data_folder_path + '/' + dir_name  # 子目录
+            subject_images_names = os.listdir(subject_dir_path)  # 获取所有图片名
             for image_name in subject_images_names:
-                if image_name.startswith('.'):
+                if image_name.startswith('.'):  # 忽略隐藏文件
                     continue
                 image_path = subject_dir_path + '/' + image_name
-                image = cv2.imread(image_path)
-                face, rect = self.detectFace(image)
+                image = cv2.imread(image_path)  # 读取图片
+                face, rect = self.detectFace(image)  # 探测人脸，返回
                 if face is not None:
-                    faces.append(face)
-                    labels.append(face_id)
+                    faces.append(face)  # D到的脸放入list
+                    labels.append(face_id)  # face_id放入标签，同一个人的脸同一个face_id
             face_id = face_id + 1
 
         cursor.close()
@@ -264,9 +295,9 @@ class DataManageUI(QWidget):
                 face_recognizer = cv2.face.LBPHFaceRecognizer_create()
                 if not os.path.exists('./recognizer'):
                     os.makedirs('./recognizer')
-            faces, labels = self.prepareTrainingData(self.datasets)
-            face_recognizer.train(faces, np.array(labels))
-            face_recognizer.save('./recognizer/trainingData.yml')
+                faces, labels = self.prepareTrainingData(self.datasets)  # 准备图片数据
+                face_recognizer.train(faces, np.array(labels))
+                face_recognizer.save('./recognizer/trainingData.yml')
         except FileNotFoundError:
             logging.error('系统找不到人脸数据目录{}'.format(self.datasets))
             self.trainButton.setIcon(QIcon('./icons/error.png'))
