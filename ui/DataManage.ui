@@ -6,480 +6,350 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1442</width>
-    <height>878</height>
+    <width>1545</width>
+    <height>941</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>OpenCV Face Recognition System - DataManage</string>
+   <string>人脸识别考勤管理系统 - 数据管理端DataManage</string>
   </property>
-  <widget class="QGroupBox" name="faceDbGroupBox">
-   <property name="geometry">
-    <rect>
-     <x>10</x>
-     <y>10</y>
-     <width>1421</width>
-     <height>861</height>
-    </rect>
-   </property>
-   <property name="title">
-    <string>人脸库</string>
-   </property>
-   <property name="alignment">
-    <set>Qt::AlignCenter</set>
-   </property>
-   <widget class="QGroupBox" name="deleteUserGroupBox">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>680</y>
-      <width>831</width>
-      <height>171</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>删除用户</string>
-    </property>
-    <widget class="QGroupBox" name="queryUserGroupBox">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>20</y>
-       <width>411</width>
-       <height>141</height>
-      </rect>
-     </property>
+  <layout class="QHBoxLayout" name="horizontalLayout_3">
+   <item>
+    <widget class="QGroupBox" name="faceDbGroupBox">
      <property name="title">
-      <string>学号查询</string>
+      <string>人脸库</string>
      </property>
-     <widget class="QLabel" name="queryResultLabel">
-      <property name="geometry">
-       <rect>
-        <x>20</x>
-        <y>110</y>
-        <width>201</width>
-        <height>21</height>
-       </rect>
-      </property>
-      <property name="frameShape">
-       <enum>QFrame::NoFrame</enum>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-      <property name="alignment">
-       <set>Qt::AlignCenter</set>
-      </property>
-     </widget>
-     <widget class="QWidget" name="layoutWidget">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>20</y>
-        <width>381</width>
-        <height>111</height>
-       </rect>
-      </property>
-      <layout class="QVBoxLayout" name="verticalLayout">
-       <item>
-        <widget class="QLineEdit" name="queryUserLineEdit">
-         <property name="placeholderText">
-          <string>请输入12位学号，仅支持精确查询</string>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+     <layout class="QHBoxLayout" name="horizontalLayout_2">
+      <item>
+       <widget class="QSplitter" name="splitter">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <widget class="QGroupBox" name="dbVisualGroupBox">
+         <property name="title">
+          <string>数据库表格</string>
          </property>
+         <layout class="QGridLayout" name="gridLayout_2">
+          <item row="0" column="0">
+           <widget class="QTableWidget" name="tableWidget">
+            <property name="selectionBehavior">
+             <enum>QAbstractItemView::SelectRows</enum>
+            </property>
+            <property name="sortingEnabled">
+             <bool>true</bool>
+            </property>
+            <attribute name="horizontalHeaderCascadingSectionResizes">
+             <bool>false</bool>
+            </attribute>
+            <attribute name="horizontalHeaderStretchLastSection">
+             <bool>false</bool>
+            </attribute>
+            <attribute name="verticalHeaderCascadingSectionResizes">
+             <bool>true</bool>
+            </attribute>
+            <column>
+             <property name="text">
+              <string>学号</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Face ID</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>姓名</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>汉语拼音</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>专业</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>年级</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>班级</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>性别</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>生源地</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>民族</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>最近签到时间</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>总签到次数</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>注册时间</string>
+             </property>
+            </column>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="tipLabel">
+            <property name="text">
+             <string>                                                           注：Face ID为 -1 说明该用户的人脸数据未被训练</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="queryUserButton">
-         <property name="enabled">
-          <bool>false</bool>
+        <widget class="QGroupBox" name="logGroupBox">
+         <property name="title">
+          <string>系统日志</string>
          </property>
-         <property name="toolTip">
-          <string>数据库未完成初始化，请检查</string>
-         </property>
-         <property name="text">
-          <string>查询</string>
-         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_3">
+          <item>
+           <widget class="QTextEdit" name="logTextEdit">
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="queryUserGroupBox">
+            <property name="title">
+             <string>数据库查询</string>
+            </property>
+            <layout class="QHBoxLayout" name="horizontalLayout">
+             <item>
+              <layout class="QVBoxLayout" name="verticalLayout">
+               <item>
+                <widget class="QLineEdit" name="querystuIDLineEdit">
+                 <property name="placeholderText">
+                  <string>请输入要查询的10位学号</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLineEdit" name="queryNameLineEdit">
+                 <property name="placeholderText">
+                  <string>请输入要查询的姓名</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLineEdit" name="queryenNameLineEdit">
+                 <property name="placeholderText">
+                  <string>请输入要查询的姓名拼音</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLineEdit" name="queryMajorLineEdit">
+                 <property name="placeholderText">
+                  <string>请输入要查询的专业</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLineEdit" name="queryGradeLineEdit">
+                 <property name="placeholderText">
+                  <string>请输入要查询的年级</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLineEdit" name="queryClassLineEdit">
+                 <property name="placeholderText">
+                  <string>请输入要查询的班级</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLineEdit" name="queryProvinceLineEdit">
+                 <property name="placeholderText">
+                  <string>请输入要查询的生源地</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLineEdit" name="queryNationLineEdit">
+                 <property name="placeholderText">
+                  <string>请输入要查询的民族</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="queryUserButton">
+                 <property name="enabled">
+                  <bool>false</bool>
+                 </property>
+                 <property name="toolTip">
+                  <string>数据库未完成初始化，请检查</string>
+                 </property>
+                 <property name="text">
+                  <string>查询</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="dbManageGroupBox">
+            <property name="title">
+             <string>数据管理</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+            <layout class="QVBoxLayout" name="verticalLayout_4">
+             <item>
+              <widget class="QGroupBox" name="dbStatusGroupBox">
+               <property name="title">
+                <string>数据库状态</string>
+               </property>
+               <layout class="QGridLayout" name="gridLayout">
+                <item row="0" column="0">
+                 <widget class="QPushButton" name="initDbButton">
+                  <property name="text">
+                   <string>初始化数据库</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="1" column="0">
+                 <layout class="QHBoxLayout" name="dbUserCountHorizontalLayout">
+                  <item>
+                   <widget class="QLabel" name="dbUserCountLabel">
+                    <property name="text">
+                     <string>数据库已存人脸样本数：</string>
+                    </property>
+                    <property name="alignment">
+                     <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLCDNumber" name="dbUserCountLcdNum">
+                    <property name="segmentStyle">
+                     <enum>QLCDNumber::Flat</enum>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+               </layout>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="trainGroupBox">
+            <property name="title">
+             <string>训练数据</string>
+            </property>
+            <layout class="QGridLayout" name="gridLayout_6">
+             <item row="0" column="0">
+              <widget class="QGroupBox" name="imgPreprocessGroupBox">
+               <property name="title">
+                <string>图像预处理</string>
+               </property>
+               <layout class="QVBoxLayout" name="verticalLayout_5">
+                <item>
+                 <widget class="QCheckBox" name="equalizeHistCheckBox">
+                  <property name="text">
+                   <string>直方图均衡化</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+             <item row="1" column="0">
+              <widget class="QPushButton" name="trainButton">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="toolTip">
+                <string>数据库未完成初始化，请检查</string>
+               </property>
+               <property name="text">
+                <string>开始训练</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="deleteUserGroupBox">
+            <property name="title">
+             <string>数据库管理用户</string>
+            </property>
+            <layout class="QHBoxLayout" name="horizontalLayout_4">
+             <item>
+              <widget class="QPushButton" name="deleteUserButton">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="toolTip">
+                <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;未选择用户数据，请在数据表格中选择用户数据再删除。按住Ctrl可以多选非相邻行，按住shift可以连续选择多条相邻行&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+               </property>
+               <property name="text">
+                <string>删除记录</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="CellChangeButton">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="toolTip">
+                <string>数据库未完成初始化，请检查</string>
+               </property>
+               <property name="text">
+                <string>允许编辑</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
         </widget>
-       </item>
-      </layout>
-     </widget>
+       </widget>
+      </item>
+     </layout>
     </widget>
-    <widget class="QGroupBox" name="queryResultGroupBox">
-     <property name="geometry">
-      <rect>
-       <x>430</x>
-       <y>20</y>
-       <width>381</width>
-       <height>141</height>
-      </rect>
-     </property>
-     <property name="title">
-      <string>查询结果</string>
-     </property>
-     <widget class="QWidget" name="layoutWidget_3">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>20</y>
-        <width>361</width>
-        <height>81</height>
-       </rect>
-      </property>
-      <layout class="QHBoxLayout" name="infoHorizontalLayout">
-       <item>
-        <layout class="QVBoxLayout" name="keyVerticalLayout">
-         <item>
-          <widget class="QLabel" name="stuIDLabel">
-           <property name="frameShape">
-            <enum>QFrame::NoFrame</enum>
-           </property>
-           <property name="text">
-            <string>学号：</string>
-           </property>
-           <property name="alignment">
-            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="cnNameLabel">
-           <property name="frameShape">
-            <enum>QFrame::NoFrame</enum>
-           </property>
-           <property name="text">
-            <string>姓名：</string>
-           </property>
-           <property name="alignment">
-            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="faceIDLabel">
-           <property name="frameShape">
-            <enum>QFrame::NoFrame</enum>
-           </property>
-           <property name="text">
-            <string>Face ID：</string>
-           </property>
-           <property name="alignment">
-            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <layout class="QVBoxLayout" name="valueVerticalLayout">
-         <item>
-          <widget class="QLineEdit" name="stuIDLineEdit">
-           <property name="focusPolicy">
-            <enum>Qt::StrongFocus</enum>
-           </property>
-           <property name="readOnly">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLineEdit" name="cnNameLineEdit">
-           <property name="focusPolicy">
-            <enum>Qt::StrongFocus</enum>
-           </property>
-           <property name="readOnly">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLineEdit" name="faceIDLineEdit">
-           <property name="focusPolicy">
-            <enum>Qt::StrongFocus</enum>
-           </property>
-           <property name="readOnly">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QPushButton" name="deleteUserButton">
-      <property name="enabled">
-       <bool>false</bool>
-      </property>
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>110</y>
-        <width>361</width>
-        <height>23</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>删除记录</string>
-      </property>
-     </widget>
-    </widget>
-   </widget>
-   <widget class="QGroupBox" name="dbVisualGroupBox">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>20</y>
-      <width>1121</width>
-      <height>651</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string/>
-    </property>
-    <widget class="QTableWidget" name="tableWidget">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>10</y>
-       <width>1101</width>
-       <height>601</height>
-      </rect>
-     </property>
-     <column>
-      <property name="text">
-       <string>学号</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>Face ID</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>姓名</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>汉语拼音</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>专业</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>年级</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>班级</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>性别</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>生源地</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>民族</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>最近签到时间</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>总签到次数</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>注册时间</string>
-      </property>
-     </column>
-    </widget>
-    <widget class="QLabel" name="tipLabel">
-     <property name="geometry">
-      <rect>
-       <x>300</x>
-       <y>610</y>
-       <width>381</width>
-       <height>31</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>注：Face ID为 -1 说明该用户的人脸数据未被训练</string>
-     </property>
-    </widget>
-   </widget>
-   <widget class="QGroupBox" name="trainGroupBox">
-    <property name="geometry">
-     <rect>
-      <x>860</x>
-      <y>680</y>
-      <width>201</width>
-      <height>161</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>训练数据</string>
-    </property>
-    <widget class="QPushButton" name="trainButton">
-     <property name="enabled">
-      <bool>false</bool>
-     </property>
-     <property name="geometry">
-      <rect>
-       <x>20</x>
-       <y>110</y>
-       <width>161</width>
-       <height>31</height>
-      </rect>
-     </property>
-     <property name="toolTip">
-      <string>数据库未完成初始化，请检查</string>
-     </property>
-     <property name="text">
-      <string>开始训练</string>
-     </property>
-    </widget>
-    <widget class="QGroupBox" name="imgPreprocessGroupBox">
-     <property name="geometry">
-      <rect>
-       <x>20</x>
-       <y>20</y>
-       <width>161</width>
-       <height>71</height>
-      </rect>
-     </property>
-     <property name="title">
-      <string>图像预处理</string>
-     </property>
-     <widget class="QCheckBox" name="equalizeHistCheckBox">
-      <property name="geometry">
-       <rect>
-        <x>20</x>
-        <y>20</y>
-        <width>131</width>
-        <height>41</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>直方图均衡化</string>
-      </property>
-     </widget>
-    </widget>
-   </widget>
-   <widget class="QGroupBox" name="dbManageGroupBox">
-    <property name="geometry">
-     <rect>
-      <x>1080</x>
-      <y>680</y>
-      <width>331</width>
-      <height>171</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>数据管理</string>
-    </property>
-    <property name="alignment">
-     <set>Qt::AlignCenter</set>
-    </property>
-    <widget class="QGroupBox" name="dbStatusGroupBox">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>20</y>
-       <width>311</width>
-       <height>141</height>
-      </rect>
-     </property>
-     <property name="title">
-      <string>数据库状态</string>
-     </property>
-     <widget class="QWidget" name="layoutWidget_4">
-      <property name="geometry">
-       <rect>
-        <x>20</x>
-        <y>90</y>
-        <width>281</width>
-        <height>31</height>
-       </rect>
-      </property>
-      <layout class="QHBoxLayout" name="dbUserCountHorizontalLayout">
-       <item>
-        <widget class="QLabel" name="dbUserCountLabel">
-         <property name="text">
-          <string>数据库已存人脸样本数：</string>
-         </property>
-         <property name="alignment">
-          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLCDNumber" name="dbUserCountLcdNum">
-         <property name="segmentStyle">
-          <enum>QLCDNumber::Flat</enum>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QPushButton" name="initDbButton">
-      <property name="geometry">
-       <rect>
-        <x>80</x>
-        <y>40</y>
-        <width>131</width>
-        <height>31</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>初始化数据库</string>
-      </property>
-     </widget>
-    </widget>
-   </widget>
-   <widget class="QGroupBox" name="logGroupBox">
-    <property name="geometry">
-     <rect>
-      <x>1140</x>
-      <y>10</y>
-      <width>271</width>
-      <height>661</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>系统日志</string>
-    </property>
-    <widget class="QTextEdit" name="logTextEdit">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>20</y>
-       <width>251</width>
-       <height>621</height>
-      </rect>
-     </property>
-     <property name="readOnly">
-      <bool>true</bool>
-     </property>
-    </widget>
-   </widget>
-  </widget>
+   </item>
+  </layout>
  </widget>
  <resources/>
  <connections/>

@@ -5,6 +5,7 @@ import re
 
 import cv2
 import pymysql
+import shutil
 
 from PyQt5.QtCore import QTimer, QRegExp, pyqtSignal, QThread
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QRegExpValidator, QTextCursor
@@ -108,9 +109,10 @@ class DataRecordUI(QWidget):
         self.isExcel_path_ready = False
         self.ExcelpathButton.clicked.connect(self.chooese_excel_paths)
 
+    # 表格导入学生信息
     def chooese_excel_paths(self):
 
-        excel_paths = QFileDialog.getOpenFileNames(self, 'open the dialog',
+        excel_paths = QFileDialog.getOpenFileNames(self, '选择表格',
                                                    "./",
                                                    'EXCEL 文件 (*.xlsx;*.xls;*.xlm;*.xlt;*.xlsm;*.xla)')
         excel_paths = excel_paths[0]
@@ -121,7 +123,7 @@ class DataRecordUI(QWidget):
                                port=3306,
                                charset='utf8')
         cursor = conn.cursor()
-
+        error_count = 0
         for path in excel_paths:
             sheets_file = xlrd.open_workbook(path)
             for index, sheet in enumerate(sheets_file.sheets()):
@@ -152,17 +154,39 @@ class DataRecordUI(QWidget):
                         print(e)
                         logging.error('读写数据库异常，无法向数据库插入/更新记录')
                         self.logQueue.put('Error：读写数据库异常，同步失败')
-                self.logQueue.put('读取完毕！')
+                        error_count += 1
+                self.logQueue.put('导入完毕！其中导入失败 {} 条信息'.format(error_count))
 
         cursor.close()
         conn.commit()
         conn.close()
-        self.ImagepathButton.setEnabled(True)
 
+    # 图片批量导入
     def choose_images_paths(self):
-        image_paths = QFileDialog.getOpenFileNames(self, 'open the dialog',
+        image_paths = QFileDialog.getOpenFileNames(self, '选择图片',
                                                    "./",
-                                                   'EXCEL 文件 (*.xlsx;*.xls;*.xlm;*.xlt;*.xlsm;*.xla)')
+                                                   'JEPG files(*.jpg);;PNG files(*.PNG)')
+        image_paths = image_paths[0]
+        error_count = 0
+        self.logQueue.put('开始读取图片数据...')
+        for index, path in enumerate(image_paths):
+            stu_id = os.path.split(path)[1].split('.')[0]
+            # print(stu_id)
+            if not os.path.exists('{}/stu_{}'.format(self.datasets, stu_id)):
+                text = '命名错误！'
+                informativeText = '<b>文件 <font color=red>{}</font> 存在问题，数据库中没有以该图片名为学号的用户。</b>'.format(path)
+                DataRecordUI.callDialog(QMessageBox.Critical, text, informativeText, QMessageBox.Ok)
+                error_count += 1
+                continue
+            dstpath = '{}/stu_{}/img.{}.jpg'.format(self.datasets, stu_id, stu_id + '-0')
+            try:
+                shutil.copy(path, dstpath)
+            except:
+                text = '命名格式错误！'
+                informativeText = '<b>文件 <font color=red>{}</font> 命名格式不正确。</b>'.format(path)
+                DataRecordUI.callDialog(QMessageBox.Critical, text, informativeText, QMessageBox.Ok)
+                error_count += 1
+        self.logQueue.put('图片批量导入完成！其中导入失败 {} 张图片'.format(error_count))
 
     # 是否使用外接摄像头
     def useExternalCamera(self, useExternalCameraCheckBox):
@@ -220,7 +244,7 @@ class DataRecordUI(QWidget):
 
     # 开始/结束采集人脸数据
     def startFaceRecord(self, startFaceRecordButton):
-        if startFaceRecordButton.text() == '开始采集人脸数据':
+        if startFaceRecordButton.text() == '开始采集人脸数据':  # 只能用==判断，不能用is
             if self.isFaceDetectEnabled:
                 if self.isUserInfoReady:  # 学生信息确认
                     self.addOrUpdateUserInfoButton.setEnabled(False)  # 采集人脸数据时禁用修改学生信息
@@ -398,6 +422,7 @@ class DataRecordUI(QWidget):
             self.initDbButton.setEnabled(False)
             self.addOrUpdateUserInfoButton.setEnabled(True)
             self.ExcelpathButton.setEnabled(True)
+            self.ImagepathButton.setEnabled(True)
         finally:
             cursor.close()
             conn.commit()
