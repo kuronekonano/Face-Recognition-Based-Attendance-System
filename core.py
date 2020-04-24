@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, QRegExp, Qt
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QTextCursor, QRegExpValidator
-from PyQt5.QtWidgets import QDialog, QApplication, QMainWindow, QMessageBox
+from PyQt5.QtWidgets import QDialog, QApplication, QMainWindow, QMessageBox, QAbstractItemView, QTableWidgetItem
 from PyQt5.uic import loadUi
 
 import os
@@ -47,6 +47,17 @@ def cv2ImgAddText(img, text, left, top, textColor=(0, 0, 255)):
     return cv2.cvtColor(numpy.asarray(img), cv2.COLOR_RGB2BGR)
 
 
+def connect_to_sql():
+    conn = pymysql.connect(host='localhost',
+                           user='root',
+                           password='970922',
+                           db='mytest',
+                           port=3306,
+                           charset='utf8')
+    cursor = conn.cursor()
+    return conn, cursor
+
+
 # 找不到已训练的人脸数据文件,错误类
 class TrainingDataNotFoundError(FileNotFoundError):
     pass
@@ -58,11 +69,12 @@ class DatabaseNotFoundError(FileNotFoundError):
 
 
 class CoreUI(QMainWindow):
-    # database = './FaceBase.db'  # sqlite 数据库路径，存储学生信息文本
+    database = 'users'  # sqlite 数据库路径，存储学生信息文本
     trainingData = './recognizer/trainingData.yml'  # 训练数据路径【由数据录入时生成】
     cap = cv2.VideoCapture()  # OpenCV获取视频源方法
     captureQueue = queue.Queue()  # 图像队列
     alarmQueue = queue.LifoQueue()  # 报警队列，后进先出
+    attendance_queue = queue.Queue()
     saveQueue = queue.Queue()  # 报警队列，后进先出
     logQueue = multiprocessing.Queue()  # 日志队列，用于同步所有功能多进程状态
     receiveLogSignal = pyqtSignal(str)  # LOG信号
@@ -85,6 +97,9 @@ class CoreUI(QMainWindow):
         self.startWebcamButton.toggled.connect(self.startWebcam)  # 按钮绑定开启摄像头逻辑
         self.startWebcamButton.setCheckable(True)
 
+        # 创建班级
+        self.CreateClasspushButton.clicked.connect(self.create_class)
+
         # 数据库按钮绑定
         self.initDbButton.setIcon(QIcon('./icons/warning.png'))  # 数据警告图标
         self.initDbButton.clicked.connect(self.initDb)  # 按钮绑定数据库初始化函数
@@ -106,23 +121,18 @@ class CoreUI(QMainWindow):
             lambda: self.faceProcessingThread.enableEqualizeHist(self))
 
         # 调试模式
-        self.debugCheckBox.stateChanged.connect(lambda: self.faceProcessingThread.enableDebug(self))
+        self.debugCheckBox.stateChanged.connect(lambda: self.faceProcessingThread.enableDebug(self))  # 调试模式开关绑定
         self.confidenceThresholdSlider.valueChanged.connect(
-            lambda: self.faceProcessingThread.setConfidenceThreshold(self))
+            lambda: self.faceProcessingThread.setConfidenceThreshold(self))  # 调试模式相似度阈值控制绑定
         self.autoAlarmThresholdSlider.valueChanged.connect(
-            lambda: self.faceProcessingThread.setAutoAlarmThreshold(self))
+            lambda: self.faceProcessingThread.setAutoAlarmThreshold(self))  # 调试模式置信度阈值绑定
 
-        # 报警系统
-        self.recieveAlarm = RecieveAlarm()
-        # self.alarmSignalThreshold = 10
-        # self.panalarmThread = threading.Thread(target=self.recieveAlarm, daemon=True)  # 报警线程实例
-        # self.isBellEnabled = True  # 报警开关默认开启
-        # self.bellCheckBox.stateChanged.connect(lambda: self.enableBell(self.bellCheckBox))
-        self.bellCheckBox.stateChanged.connect(lambda: self.recieveAlarm.enableBell(self))
-        # self.isTelegramBotPushEnabled = False  # 报警机器人默认关闭
+        # 签到系统
+        self.recieveAlarm = RecieveAlarm()  # 签到线程实例化
+        self.bellCheckBox.stateChanged.connect(lambda: self.recieveAlarm.enableBell(self))  # 设备发声控制绑定
         self.telegramBotPushCheckBox.stateChanged.connect(
-            lambda: self.recieveAlarm.enableTelegramBotPush(self))
-        self.telegramBotSettingsButton.clicked.connect(self.telegramBotSettings)
+            lambda: self.recieveAlarm.enableTelegramBotPush(self))  # 截图推送控制绑定
+        self.telegramBotSettingsButton.clicked.connect(self.telegramBotSettings)  # 推送配置控制绑定
 
         # 帮助与支持
         self.viewGithubRepoButton.clicked.connect(
@@ -141,13 +151,7 @@ class CoreUI(QMainWindow):
     # 检查数据库状态
     def initDb(self):
         try:
-            conn = pymysql.connect(host='localhost',
-                                   user='root',
-                                   password='970922',
-                                   db='mytest',
-                                   port=3306,
-                                   charset='utf8')
-            cursor = conn.cursor()
+            conn, cursor = connect_to_sql()
 
             if not DataRecordUI.table_exists(cursor, 'user'):  # 检查学生信息数据库
                 raise DatabaseNotFoundError
@@ -181,7 +185,58 @@ class CoreUI(QMainWindow):
                 self.initDbButton.setIcon(QIcon('./icons/success.png'))  # 修改图标
                 self.initDbButton.setEnabled(False)  # 只允许初始化一次数据库，之后按钮变为不可用
                 self.faceRecognizerCheckBox.setToolTip('须先开启人脸跟踪')  # 修改人脸识别复选框提示符
-                self.faceRecognizerCheckBox.setEnabled(True)  # 初始化数据库成功后人脸识别复选框改为可用
+                self.faceRecognizerCheckBox.setEnabled(True)  # 启用人脸识别开关
+                self.CreateClasspushButton.setEnabled(True)  # 启用创建名单开关
+
+    # 创建课程/班级签到表
+    def create_class(self):
+        self.create_class_dialog = CreatClassDialog()
+        self.create_class_dialog.CreatepushButton.clicked.connect(self.save_table)
+        self.create_class_dialog.exec()
+
+    # 保存表并提交数据库逻辑
+    def save_table(self):
+        self.class_name = self.create_class_dialog.ClassNameLineEdit.text().strip()
+        if self.class_name == '':
+            text = '课程或班级名称为空！'
+            informativeText = '<b>请输入课程或班级名称。</b>'
+            CoreUI.callDialog(QMessageBox.Critical, text, informativeText, QMessageBox.Ok)
+            return
+        conn, cursor = connect_to_sql()
+        try:
+            if not DataRecordUI.table_exists(cursor, self.class_name):  # 检查学生信息数据库
+                sql = '''CREATE TABLE IF NOT EXISTS `%s` (
+                                          stu_id VARCHAR(20) PRIMARY KEY NOT NULL,
+                                          cn_name VARCHAR(30) NOT NULL,
+                                          attendance int(2) DEFAULT 0,
+                                          attendance_time TIME DEFAULT NULL
+                                          )''' % self.class_name
+                cursor.execute(sql)  # 单次签到建表
+            row_num = self.create_class_dialog.AddStuTable.rowCount()
+            for row in range(row_num):
+                stu_id = self.create_class_dialog.AddStuTable.item(row, 0).text()
+                cn_name = self.create_class_dialog.AddStuTable.item(row, 1).text()
+                sql_judge = 'select stu_id from `%s` where stu_id="%s"' % (self.class_name, stu_id)
+                cursor.execute(sql_judge)  # 重复插入判定
+                judge_id = cursor.fetchone()
+                if judge_id is None:
+                    insert_sql = '''INSERT INTO `%s` (stu_id, cn_name) VALUES ("%s", "%s")''' % (
+                        self.class_name, stu_id, cn_name)
+                    cursor.execute(insert_sql)
+        except Exception as e:
+            logging.error('读取数据库异常，无法完成数据存储')
+            CoreUI.logQueue.put('Error：数据存储失败')
+            print(e)
+        else:
+            CoreUI.logQueue.put('Success：数据存储完成')
+        finally:
+            cursor.close()
+            conn.commit()
+            conn.close()
+
+        self.create_class_dialog.close()
+        if not self.panalarmCheckBox.isEnabled():
+            self.panalarmCheckBox.setEnabled(True)
 
     # 是否使用外接摄像头
     def useExternalCamera(self, useExternalCameraCheckBox):
@@ -208,23 +263,16 @@ class CoreUI(QMainWindow):
                 else:
                     self.timer.start(5)  # 启动定时器,每5ms刷新一次
                     self.faceProcessingThread.start()  # 启动OpenCV图像处理线程
-                    self.recieveAlarm.start()
-                    # self.panalarmThread.start()  # 启动报警系统线程
+                    self.recieveAlarm.start()  # 启动报警系统线程
                     self.startWebcamButton.setIcon(QIcon('./icons/success.png'))
                     self.startWebcamButton.setText('关闭摄像头')
         else:  # 关闭摄像头
-            # text = '如果关闭摄像头，须重启程序才能再次打开。'
-            # informativeText = '<b>是否继续？</b>'
-            # ret = CoreUI.callDialog(QMessageBox.Warning, text, informativeText, QMessageBox.Yes | QMessageBox.No,
-            #                         QMessageBox.No)
-
-            # if ret == QMessageBox.Yes:
             self.faceProcessingThread.stop()
             self.recieveAlarm.stop()
             if self.cap.isOpened():
                 if self.timer.isActive():
                     self.timer.stop()
-                self.cap.release()  # 释放捕获
+                self.cap.release()  # 释放摄像头控制
 
                 self.realTimeCaptureLabel.clear()
                 self.realTimeCaptureLabel.setText('<font color=red>摄像头未开启</font>')
@@ -270,36 +318,6 @@ class CoreUI(QMainWindow):
         qlabel.setPixmap(QPixmap.fromImage(outImage))
         qlabel.setScaledContents(True)  # 图片自适应大小
 
-    # 报警系统：是否允许设备响铃
-    def enableBell(self, bellCheckBox):
-        if bellCheckBox.isChecked():
-            self.isBellEnabled = True
-            self.statusBar().showMessage('设备发声：开启')
-        else:
-            if self.isTelegramBotPushEnabled:
-                self.isBellEnabled = False
-                self.statusBar().showMessage('设备发声：关闭')
-            else:
-                self.logQueue.put('Error：操作失败，至少选择一种报警方式')
-                self.bellCheckBox.setCheckState(Qt.Unchecked)
-                self.bellCheckBox.setChecked(True)
-        # print('isBellEnabled：', self.isBellEnabled)
-
-    # 报警系统：是否允许TelegramBot推送
-    def enableTelegramBotPush(self, telegramBotPushCheckBox):
-        if telegramBotPushCheckBox.isChecked():
-            self.isTelegramBotPushEnabled = True
-            self.statusBar().showMessage('TelegramBot推送：开启')
-        else:
-            if self.isBellEnabled:
-                self.isTelegramBotPushEnabled = False
-                self.statusBar().showMessage('TelegramBot推送：关闭')
-            else:
-                self.logQueue.put('Error：操作失败，至少选择一种报警方式')
-                self.telegramBotPushCheckBox.setCheckState(Qt.Unchecked)
-                self.telegramBotPushCheckBox.setChecked(True)
-        print('isTelegramBotPushEnabled：', self.isTelegramBotPushEnabled)
-
     # TelegramBot设置
     def telegramBotSettings(self):
         cfg = ConfigParser()
@@ -343,7 +361,7 @@ class CoreUI(QMainWindow):
     def bellProcess(queue):
         logQueue = queue  # 参数是一个日志队列，用于同步所有进程的日志信息
         logQueue.put('Info：设备正在响铃...')
-        winsound.PlaySound('./alarm.wav', winsound.SND_FILENAME)  # 调用音频
+        winsound.PlaySound('./eshop.wav', winsound.SND_FILENAME)  # 调用音频
 
     # TelegramBot推送进程
     @staticmethod
@@ -382,8 +400,6 @@ class CoreUI(QMainWindow):
             data = self.logQueue.get()
             if data:
                 self.receiveLogSignal.emit(data)  # 发射信号
-            else:
-                continue
 
     # LOG输出，参数为日志文本信息
     def logOutput(self, log):
@@ -507,12 +523,12 @@ class RecieveAlarm(QThread):
                 self.isBellEnabled = False
                 coreUI.statusBar().showMessage('设备发声：关闭')
             else:
-                coreUI.logQueue.put('Error：操作失败，至少选择一种报警方式')
+                coreUI.logQueue.put('Error：操作失败，至少选择一种确认方式')
                 coreUI.bellCheckBox.setCheckState(Qt.Unchecked)
                 coreUI.bellCheckBox.setChecked(True)
         # print('isBellEnabled：', self.isBellEnabled)
 
-    # 机器人推送
+    # 报警系统: 机器人推送
     def enableTelegramBotPush(self, coreUI):
         if coreUI.telegramBotPushCheckBox.isChecked():
             self.isTelegramBotPushEnabled = True
@@ -522,7 +538,7 @@ class RecieveAlarm(QThread):
                 self.isTelegramBotPushEnabled = False
                 coreUI.statusBar().showMessage('TelegramBot推送：关闭')
             else:
-                coreUI.logQueue.put('Error：操作失败，至少选择一种报警方式')
+                coreUI.logQueue.put('Error：操作失败，至少选择一种确认方式')
                 coreUI.telegramBotPushCheckBox.setCheckState(Qt.Unchecked)
                 coreUI.telegramBotPushCheckBox.setChecked(True)
         # print('isTelegramBotPushEnabled：', self.isTelegramBotPushEnabled)
@@ -530,8 +546,8 @@ class RecieveAlarm(QThread):
     def run(self) -> None:
         self.isRunning = True
         while self.isRunning:
-            jobs = []
-            write_jobs = []
+            jobs_alarm = []
+            jobs_confirm = []
             # print(self.alarmQueue.qsize())
             if CoreUI.alarmQueue.qsize() > self.alarmSignalThreshold:  # 若报警信号触发超出既定计数，进行报警
                 if not os.path.isdir('./unknown'):  # 未知人员目录检查存在
@@ -543,12 +559,12 @@ class RecieveAlarm(QThread):
                 logging.info('报警信号触发超出预设计数，自动报警系统已被激活')
                 CoreUI.logQueue.put('Info：报警信号触发超出预设计数，自动报警系统已被激活')
 
-                # 响铃
+                # 报警响铃
                 # print('while running isBellEnabled:', self.isBellEnabled)
-                if self.isBellEnabled:
-                    p1 = multiprocessing.Process(target=CoreUI.bellProcess, args=(CoreUI.logQueue,))
-                    p1.start()  # 调用响铃进程
-                    jobs.append(p1)
+                # if self.isBellEnabled:
+                #     p1 = multiprocessing.Process(target=CoreUI.bellProcess, args=(CoreUI.logQueue,))
+                #     p1.start()  # 调用响铃进程
+                #     jobs.append(p1)
 
                 # TelegramBot推送
                 # print('while running isTelegramBotPushEnabled:', self.isTelegramBotPushEnabled)
@@ -559,15 +575,52 @@ class RecieveAlarm(QThread):
                         img = None
                     p2 = multiprocessing.Process(target=CoreUI.telegramBotPushProcess, args=(CoreUI.logQueue, img))
                     p2.start()
-                    jobs.append(p2)
+                    jobs_alarm.append(p2)
 
                 # 等待本轮报警结束
-                for p in jobs:
+                for p in jobs_alarm:
                     p.join()
 
                 # 重置报警信号
                 with CoreUI.alarmQueue.mutex:  # 队列互斥锁
                     CoreUI.alarmQueue.queue.clear()  # 清空报警队列
+
+            if CoreUI.attendance_queue.qsize():
+                if not os.path.isdir('./attendance_snapshot'):  # 未知人员目录检查存在
+                    os.makedirs('./attendance_snapshot')
+                arrive_signal = CoreUI.attendance_queue.get()
+
+                timestamp, img = arrive_signal.get('timestamp'), arrive_signal.get('img')  # 获取报警时间戳、获取报警帧
+                # 疑似陌生人脸，截屏存档
+                cv2.imwrite('./attendance_snapshot/{}.jpg'.format(timestamp), img)  # 存储截图,命名为时间戳
+                logging.info('签到成功！')
+                CoreUI.logQueue.put('Info：有新的同学签到成功，签到确认系统已被激活')
+
+                # 签到响铃
+                # print('while running isBellEnabled:', self.isBellEnabled)
+                if self.isBellEnabled:
+                    p1 = multiprocessing.Process(target=CoreUI.bellProcess, args=(CoreUI.logQueue,))
+                    p1.start()  # 调用响铃进程
+                    jobs_confirm.append(p1)
+
+                # TelegramBot推送
+                # print('while running isTelegramBotPushEnabled:', self.isTelegramBotPushEnabled)
+                if self.isTelegramBotPushEnabled:
+                    if os.path.isfile('./attendance_snapshot/{}.jpg'.format(timestamp)):
+                        img = './attendance_snapshot/{}.jpg'.format(timestamp)
+                    else:
+                        img = None
+                    p2 = multiprocessing.Process(target=CoreUI.telegramBotPushProcess, args=(CoreUI.logQueue, img))
+                    p2.start()
+                    jobs_confirm.append(p2)
+
+                # 等待本轮报警结束
+                for p in jobs_confirm:
+                    p.join()
+
+                # 重置报警信号
+                with CoreUI.attendance_queue.mutex:  # 队列互斥锁
+                    CoreUI.attendance_queue.queue.clear()  # 清空报警队列
 
             while CoreUI.saveQueue.qsize():
                 if not os.path.isdir('./attendance_csv'):  # 临时存储目录
@@ -598,7 +651,7 @@ class FaceProcessingThread(QThread):
 
         self.isFaceTrackerEnabled = True  # 人脸追踪
         self.isFaceRecognizerEnabled = False  # 人脸识别
-        self.isPanalarmEnabled = True  # 报警系统
+        self.isPanalarmEnabled = False  # 报警系统
 
         self.isDebugMode = False  # 调试模式
         self.confidenceThreshold = 55  # 置信度阈值
@@ -635,12 +688,17 @@ class FaceProcessingThread(QThread):
 
     # 是否开启报警系统
     def enablePanalarm(self, coreUI):
-        if coreUI.panalarmCheckBox.isChecked():
-            self.isPanalarmEnabled = True
-            coreUI.statusBar().showMessage('报警系统：开启')
+        if coreUI.panalarmCheckBox.isChecked():  # 检查人脸识别复选框状态
+            if self.isFaceRecognizerEnabled:  # 人脸识别要在人脸追踪的基础上启动
+                self.isPanalarmEnabled = True
+                coreUI.statusBar().showMessage('签到系统：开启')  # 左下角状态提示栏
+            else:
+                CoreUI.logQueue.put('Error：操作失败，请先开启人脸识别')
+                coreUI.panalarmCheckBox.setCheckState(Qt.Unchecked)
+                coreUI.panalarmCheckBox.setChecked(False)
         else:
-            self.isPanalarmEnabled = False
-            coreUI.statusBar().showMessage('报警系统：关闭')
+            self.panalarmCheckBox = False
+            coreUI.statusBar().showMessage('签到系统：关闭')
 
     # 是否开启调试模式
     def enableDebug(self, coreUI):
@@ -654,13 +712,13 @@ class FaceProcessingThread(QThread):
     # 设置置信度阈值
     def setConfidenceThreshold(self, coreUI):
         if self.isDebugMode:
-            self.confidenceThreshold = coreUI.confidenceThresholdSlider.value()
+            self.confidenceThreshold = coreUI.confidenceThresholdSlider.value()  # 滑动设置置信度预支
             coreUI.statusBar().showMessage('置信度阈值：{}'.format(self.confidenceThreshold))
 
     # 设置自动报警阈值
     def setAutoAlarmThreshold(self, coreUI):
         if self.isDebugMode:
-            self.autoAlarmThreshold = coreUI.autoAlarmThresholdSlider.value()
+            self.autoAlarmThreshold = coreUI.autoAlarmThresholdSlider.value()  # 滑动设置报警阈值
             coreUI.statusBar().showMessage('自动报警阈值：{}'.format(self.autoAlarmThreshold))
 
     # 直方图均衡化
@@ -672,6 +730,7 @@ class FaceProcessingThread(QThread):
             self.isEqualizeHistEnabled = False
             coreUI.statusBar().showMessage('直方图均衡化：关闭')
 
+    # 人脸检测
     def find_faces(self, gray):
         # 执行直方图均衡化
         if self.isEqualizeHistEnabled:
@@ -709,15 +768,7 @@ class FaceProcessingThread(QThread):
                 isTrainingDataLoaded = True
 
             if not isDbConnected:  # 学生信息数据库
-                # conn = sqlite3.connect(CoreUI.database)
-                # cursor = conn.cursor()
-                conn = pymysql.connect(host='localhost',
-                                       user='root',
-                                       password='970922',
-                                       db='mytest',
-                                       port=3306,
-                                       charset='utf8')
-                cursor = conn.cursor()
+                conn, cursor = connect_to_sql()
                 isDbConnected = True
 
             captureData = {}  # 单帧识别结果
@@ -778,19 +829,25 @@ class FaceProcessingThread(QThread):
                         # 若置信度评分小于置信度阈值，认为是可靠识别
                         if confidence < self.confidenceThreshold:
                             isKnown = True
-                            stu_statu = self.attendance_list.get(stu_id, 0)
-                            if stu_statu:
-                                realTimeFrame = cv2ImgAddText(realTimeFrame, '已签到', _x + _w - 45, _y - 10, (0, 97, 255))
-                            else:
-                                attendance_time = datetime.now()
-                                self.attendance_list[stu_id] = attendance_time.strftime('%H:%M:%S')
-                                csv_data = {
-                                    'path': self.init_attendance_time,
-                                    'id': stu_id,
-                                    'name': zh_name,
-                                    'time': attendance_time.strftime("%Y/%m/%d-%H:%M:%S"),
-                                }
-                                CoreUI.saveQueue.put(csv_data)
+                            if self.isPanalarmEnabled:  # 签到系统启动状态下执行
+                                stu_statu = self.attendance_list.get(stu_id, 0)
+                                if stu_statu:
+                                    realTimeFrame = cv2ImgAddText(realTimeFrame, '已签到', _x + _w - 45, _y - 10,
+                                                                  (0, 97, 255))  # 帧签到状态标记
+                                else:
+                                    attendance_time = datetime.now()
+                                    self.attendance_list[stu_id] = attendance_time.strftime('%H:%M:%S')  # TODO: 修改即时存储逻辑，思考怎么获得表（课程名）信息
+                                    csv_data = {
+                                        'path': self.init_attendance_time,
+                                        'id': stu_id,
+                                        'name': zh_name,
+                                        'time': attendance_time.strftime("%Y/%m/%d-%H:%M:%S"),
+                                    }
+                                    CoreUI.saveQueue.put(csv_data)
+                                    alarmSignal['timestamp'] = datetime.now().strftime('%Y%m%d%H%M%S')
+                                    alarmSignal['img'] = realTimeFrame
+                                    CoreUI.attendance_queue.put(alarmSignal)  # 签到队列插入该信号
+                                    logging.info('系统发出了新的签到信号')
                             # 置信度标签
                             cv2.putText(realTimeFrame, str(round(100 - confidence, 3)), (_x - 5, _y + _h + 18),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.6,
@@ -814,7 +871,7 @@ class FaceProcessingThread(QThread):
                                     alarmSignal['timestamp'] = datetime.now().strftime('%Y%m%d%H%M%S')
                                     alarmSignal['img'] = realTimeFrame
                                     CoreUI.alarmQueue.put(alarmSignal)  # 报警队列插入该信号
-                                    logging.info('系统发出了报警信号')
+                                    logging.info('系统发出了未知人脸信号')
 
                     # 帧数计数器
                     frameCounter += 1
@@ -906,7 +963,7 @@ class FaceProcessingThread(QThread):
 
                 # 绘制68个特征点
                 for i in range(5):
-                    cv2.circle(realTimeFrame, (shape.part(i).x, shape.part(i).y), 3, (0, 0, 255), 2)
+                    cv2.circle(realTimeFrame, (shape.part(i).x, shape.part(i).y), 1, (0, 0, 255), 2)
                     cv2.putText(realTimeFrame, str(i), (shape.part(i).x, shape.part(i).y), cv2.FONT_HERSHEY_COMPLEX,
                                 0.5,
                                 (255, 0, 0), 1)
@@ -916,13 +973,7 @@ class FaceProcessingThread(QThread):
             CoreUI.captureQueue.put(captureData)
 
     def commit_DB(self):
-        conn = pymysql.connect(host='localhost',
-                               user='root',
-                               password='970922',
-                               db='mytest',
-                               port=3306,
-                               charset='utf8')
-        cursor = conn.cursor()
+        conn, cursor = connect_to_sql()
         try:
             if not DataRecordUI.table_exists(cursor, self.init_attendance_time):  # 检查学生信息数据库
                 sql = '''CREATE TABLE IF NOT EXISTS `%s` (
@@ -957,9 +1008,91 @@ class FaceProcessingThread(QThread):
     # 停止OpenCV线程
     def stop(self):
         self.isRunning = False
-        self.commit_DB()
+        # self.commit_DB()
         self.quit()
         self.wait()
+
+
+class CreatClassDialog(QDialog):
+
+    def __init__(self):
+        super(CreatClassDialog, self).__init__()
+        loadUi('./ui/CreateClass.ui', self)  # 读取UI布局
+        self.setWindowIcon(QIcon('./icons/icon.png'))
+
+        # 设置tableWidget只读，不允许修改
+        self.AllStuTable.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.AddStuTable.setEditTriggers(QAbstractItemView.NoEditTriggers)
+
+        # 表格双色√
+        self.AllStuTable.setAlternatingRowColors(True)
+        self.AddStuTable.setAlternatingRowColors(True)
+
+        self.AddpushButton.clicked.connect(self.add_stu_to_table)
+        self.DelpushButton.clicked.connect(self.del_stu_from_table)
+
+        self.add_set = set()
+
+        try:
+            conn, cursor = connect_to_sql()  # 连接数据库
+
+            if not DataRecordUI.table_exists(cursor, CoreUI.database):
+                raise FileNotFoundError
+
+            cursor.execute('SELECT stu_id, cn_name, major, grade, class FROM users')
+            conn.commit()
+            stu_data = cursor.fetchall()
+            # print(stu_data)
+            self.print_to_table(stu_data)  # 输出到表格界面
+        except FileNotFoundError:
+            logging.error('系统找不到数据库表{}'.format(CoreUI.database))
+        except Exception as e:
+            print(e)
+            logging.error('读取数据库异常，无法完成数据库初始化')
+        else:
+            cursor.close()
+            conn.close()
+
+    def print_to_table(self, stu_data):
+        while self.AllStuTable.rowCount() > 0:
+            self.AllStuTable.removeRow(0)
+        for row_index, row_data in enumerate(stu_data):
+            self.AllStuTable.insertRow(row_index)  # 插入行
+            for col_index, col_data in enumerate(row_data):  # 插入列
+                self.AllStuTable.setItem(row_index, col_index, QTableWidgetItem(str(col_data)))  # 设置单元格文本
+
+    # 增加学生
+    def add_stu_to_table(self):
+        select_items = self.AllStuTable.selectedItems()  # 选中的所有单元格
+        column_count = self.AllStuTable.columnCount()  # 表格列数
+        ""
+
+
+        stu_count = len(select_items) // column_count  # 选中行数
+        for index in range(stu_count):
+            one_stu = select_items[index * column_count: (index + 1) * column_count]
+            if one_stu[0].text() in self.add_set:  # 过滤重复学号
+                continue
+            row_count = self.AddStuTable.rowCount()  # 总行数
+            self.AddStuTable.setRowCount(row_count + 1)  # 增加总行数
+            self.add_set.add(one_stu[0].text())  # 增加学生在已选择set
+            for col in range(column_count):
+                if self.AddStuTable.item(row_count, col) is None:
+                    self.AddStuTable.setItem(row_count, col, QTableWidgetItem(one_stu[col].text()))
+        # print(self.add_set)
+
+    # 删除学生
+    def del_stu_from_table(self):
+        select_items = self.AddStuTable.selectedItems()[::self.AddStuTable.columnCount()]  # 获取所有选中删除的学号
+        del_list = []
+        for item in select_items:
+            # print(item.text())
+            self.add_set.remove(item.text())  # 从已选set中删除
+            del_list.append(item.row())
+        del_list.sort()  # 为了实现多选删除，使用偏移量保证删除下标的正确性
+        for index, item in enumerate(del_list):
+            self.AddStuTable.removeRow(item - index)
+        # print(self.add_set)
 
 
 if __name__ == '__main__':

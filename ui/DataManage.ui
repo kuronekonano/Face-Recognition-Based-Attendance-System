@@ -203,6 +203,13 @@
                 </widget>
                </item>
                <item>
+                <widget class="QCheckBox" name="LikeSelectCheckBox">
+                 <property name="text">
+                  <string>模糊查询</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
                 <widget class="QPushButton" name="queryUserButton">
                  <property name="enabled">
                   <bool>false</bool>
@@ -280,15 +287,19 @@
                <property name="title">
                 <string>图像预处理</string>
                </property>
-               <layout class="QVBoxLayout" name="verticalLayout_5">
-                <item>
-                 <widget class="QCheckBox" name="equalizeHistCheckBox">
-                  <property name="text">
-                   <string>直方图均衡化</string>
-                  </property>
-                 </widget>
-                </item>
-               </layout>
+               <widget class="QCheckBox" name="equalizeHistCheckBox">
+                <property name="geometry">
+                 <rect>
+                  <x>12</x>
+                  <y>27</y>
+                  <width>109</width>
+                  <height>19</height>
+                 </rect>
+                </property>
+                <property name="text">
+                 <string>直方图均衡化</string>
+                </property>
+               </widget>
               </widget>
              </item>
              <item row="1" column="0">

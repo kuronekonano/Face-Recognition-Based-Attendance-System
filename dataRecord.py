@@ -2,6 +2,7 @@
 # Author: kuronekonano <god772525182@gmail.com>
 # 人脸信息录入
 import re
+import time
 
 import cv2
 import pymysql
@@ -9,7 +10,7 @@ import shutil
 
 from PyQt5.QtCore import QTimer, QRegExp, pyqtSignal, QThread
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QRegExpValidator, QTextCursor
-from PyQt5.QtWidgets import QDialog, QApplication, QWidget, QMessageBox, QFileDialog
+from PyQt5.QtWidgets import QDialog, QApplication, QWidget, QMessageBox, QFileDialog, QProgressBar
 from PyQt5.uic import loadUi
 
 import logging
@@ -35,6 +36,10 @@ class RecordDisturbance(Exception):
 
 class DataRecordUI(QWidget):
     receiveLogSignal = pyqtSignal(str)
+    messagebox_signal = pyqtSignal(dict)
+
+    # 日志队列
+    logQueue = queue.Queue()
 
     def __init__(self):
         super(DataRecordUI, self).__init__()
@@ -47,9 +52,6 @@ class DataRecordUI(QWidget):
         self.cap = cv2.VideoCapture()
         # 分类器
         self.faceCascade = cv2.CascadeClassifier('./haarcascades/haarcascade_frontalface_default.xml')
-
-        # 日志队列
-        self.logQueue = queue.Queue()
 
         # 图像捕获
         self.isExternalCameraUsed = False
@@ -99,18 +101,19 @@ class DataRecordUI(QWidget):
 
         # 日志系统
         self.receiveLogSignal.connect(lambda log: self.logOutput(log))  # pyqtsignal信号绑定
+        self.messagebox_signal.connect(lambda log: self.message_output(log))
         self.logOutputThread = threading.Thread(target=self.receiveLog, daemon=True)
         self.logOutputThread.start()
 
         # 批量导入
-        self.StartimportButton.setEnabled(False)
         self.isImage_path_ready = False
-        self.ImagepathButton.clicked.connect(self.choose_images_paths)
+        # self.ImagepathButton.clicked.connect(self.import_images_data)  # 使用同一线程会导致窗口无响应
+        self.ImagepathButton.clicked.connect(self.import_image_thread)  # 使用多线程实现图片导入
         self.isExcel_path_ready = False
-        self.ExcelpathButton.clicked.connect(self.chooese_excel_paths)
+        self.ExcelpathButton.clicked.connect(self.import_excel_data)
 
     # 表格导入学生信息
-    def chooese_excel_paths(self):
+    def import_excel_data(self):
 
         excel_paths = QFileDialog.getOpenFileNames(self, '选择表格',
                                                    "./",
@@ -161,8 +164,16 @@ class DataRecordUI(QWidget):
         conn.commit()
         conn.close()
 
-    # 图片批量导入
-    def choose_images_paths(self):
+    # 启用新线程导入图片，并添加进度条
+    def import_image_thread(self):
+        self.image_paths = QFileDialog.getOpenFileNames(self, '选择图片',
+                                                        "./",
+                                                        'JEPG files(*.jpg);;PNG files(*.PNG)')
+        self.image_paths = self.image_paths[0]
+        progress_bar = Actions(self)
+
+    # 图片批量导入【主线程】
+    def import_images_data(self):
         image_paths = QFileDialog.getOpenFileNames(self, '选择图片',
                                                    "./",
                                                    'JEPG files(*.jpg);;PNG files(*.PNG)')
@@ -620,8 +631,10 @@ class DataRecordUI(QWidget):
     def receiveLog(self):
         while True:
             data = self.logQueue.get()
-            if data:
+            if type(data) == str:
                 self.receiveLogSignal.emit(data)
+            elif type(data) == dict:
+                self.messagebox_signal.emit(data)
 
     # LOG输出
     def logOutput(self, log):
@@ -632,6 +645,11 @@ class DataRecordUI(QWidget):
         self.logTextEdit.moveCursor(QTextCursor.End)  # 光标移动至末尾
         self.logTextEdit.insertPlainText(log)  # 末尾插入日志消息
         self.logTextEdit.ensureCursorVisible()  # 自动滚屏
+
+    def message_output(self, log):
+        text, informative_text = log.get('text'), log.get('informativeText')
+        # print(text, informative_text)
+        DataRecordUI.callDialog(QMessageBox.Critical, text, informative_text, QMessageBox.Ok)
 
     # 系统对话框
     @staticmethod
@@ -703,13 +721,69 @@ class UserInfoDialog(QDialog):
         self.NationLineEdit.setValidator(nation_validator)
 
 
-class ReadExcelData(QThread):
+# 图片导入线程
+class ImportImageThread(QThread):
+    progress_bar_signal = pyqtSignal(float)
 
-    def __init__(self):
-        super().__init__()
-        sheet_path = QFileDialog.getOpenFileName(self, 'open the dialog',
-                                                 "./",
-                                                 'All Files (*)')
+    def __init__(self, DataRecordUI):
+        super(ImportImageThread, self).__init__()
+        self.data_record = DataRecordUI
+
+    def run(self) -> None:
+        images_count = len(self.data_record.image_paths)
+        error_count = 0
+        DataRecordUI.logQueue.put('正在读取图片数据...')
+        for index, path in enumerate(self.data_record.image_paths):
+            bar = index / images_count * 100
+            self.progress_bar_signal.emit(bar)
+            stu_id = os.path.split(path)[1].split('.')[0]
+            # print(stu_id)
+            if not os.path.exists('{}/stu_{}'.format(self.data_record.datasets, stu_id)):
+                DataRecordUI.logQueue.put('命名错误!文件 {} 存在问题，数据库中没有以该图片名为学号的用户。'.format(path))
+                error_count += 1
+                continue
+            dstpath = '{}/stu_{}/img.{}.jpg'.format(self.data_record.datasets, stu_id, stu_id + '-0')
+            try:
+                shutil.copy(path, dstpath)
+            except:
+                DataRecordUI.logQueue.put('命名格式错误！文件 {} 命名格式不正确。'.format(path))
+                error_count += 1
+        text = '导入完成！' if error_count else '导入成功!'
+        informativeText = '<b>图片批量导入完成！其中导入失败 <font color=red>{}</font> 张图片。</b>'.format(error_count)
+        message_box = {'text': text, 'informativeText': informativeText}
+        DataRecordUI.logQueue.put(message_box)
+        print('OK')
+
+
+# 进度条
+class Actions(QDialog):
+    """
+    Simple dialog that consists of a Progress Bar and a Button.
+    Clicking on the button results in the start of a timer and
+    updates the progress bar.
+    """
+
+    def __init__(self, datarecord):
+        super(Actions,self).__init__()
+        self.data_record = datarecord
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle('图片正在导入...')
+        self.progress = QProgressBar(self)
+        self.progress.setGeometry(0, 0, 300, 25)
+        self.progress.setMaximum(100)
+        self.image_thread = ImportImageThread(self.data_record)  # 导入图片线程实例
+        self.image_thread.progress_bar_signal.connect(self.onCountChanged)  # 信号槽函数绑定
+        self.image_thread.start()
+        self.show()
+        self.image_thread.exec()
+
+    def onCountChanged(self, value):
+        self.progress.setValue(int(value + 0.5))
+        if int(value + 0.5) >= 100:
+            time.sleep(2)
+            self.close()
 
 
 if __name__ == '__main__':

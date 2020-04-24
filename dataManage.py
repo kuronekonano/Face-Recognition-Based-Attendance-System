@@ -93,6 +93,17 @@ class DataManageUI(QWidget):
         self.logOutputThread = threading.Thread(target=self.receiveLog, daemon=True)
         self.logOutputThread.start()
 
+        # 模糊查询开关
+        self.enable_like_select = False
+        self.LikeSelectCheckBox.stateChanged.connect(
+            lambda: self.is_like_select(self.LikeSelectCheckBox))
+
+    def is_like_select(self, like_select_checkbox):
+        if like_select_checkbox.isChecked():
+            self.enable_like_select = True
+        else:
+            self.enable_like_select = False
+
     # 数据修改提交数据库
     def cell_change(self, row, col):
         try:
@@ -122,7 +133,7 @@ class DataManageUI(QWidget):
 
             if ret == QMessageBox.Yes:
                 update_sql = 'UPDATE users SET %s="%s" WHERE stu_id=%s' % (
-                self.sql_name_map[col], after_change_txt, stu_id)
+                    self.sql_name_map[col], after_change_txt, stu_id)
                 cursor.execute(update_sql)
                 self.logQueue.put('修改成功！')
             else:
@@ -201,9 +212,10 @@ class DataManageUI(QWidget):
     # 筛选选中数据
     def enable_delete_button(self, item):
         self.current_select.clear()
-        select_items = self.tableWidget.selectedItems()[::self.tableWidget.columnCount()]
-        self.current_select.update(map(lambda x: x.text(), select_items))
-        # print(self.current_select)
+        select_items = self.tableWidget.selectedItems()[::self.tableWidget.columnCount()]  # 取出所有选择数据中的学号
+        self.current_select.update(
+            map(lambda x: x.text(), select_items))  # 更新学号信息到set集合中,因为用的是map映射整个list的内容，因此用update而不是add
+        print(self.current_select)
         if self.current_select and self.CellChangeButton.text() != '禁用编辑':
             self.deleteUserButton.setEnabled(True)
         else:
@@ -291,7 +303,10 @@ class DataManageUI(QWidget):
             select_sql = 'SELECT * FROM users WHERE 1=1'
             for key, value in select_data.items():
                 if value is not '':
-                    select_sql += ' AND %s="%s"' % (key, value)
+                    if self.enable_like_select:
+                        select_sql += ' AND %s LIKE "%%%s%%"' % (key, value)
+                    else:
+                        select_sql += ' AND %s LIKE "%s"' % (key, value)
             # print(select_sql)
             cursor.execute(select_sql)
             ret = cursor.fetchall()
@@ -306,6 +321,7 @@ class DataManageUI(QWidget):
             informativeText = '<b>此用户不存在。</b>'
             DataRecordUI.callDialog(QMessageBox.Critical, text, informativeText, QMessageBox.Ok)
         except Exception as e:
+            print(e)
             logging.error('读取数据库异常，无法查询到{}的用户信息'.format(str(select_data)))
             self.queryUserButton.setIcon(QIcon('./icons/error.png'))
             self.logQueue.put('Error：读取数据库异常，查询失败')
@@ -322,7 +338,7 @@ class DataManageUI(QWidget):
     def deleteUser(self):
         del_user = tuple(self.current_select)
         if len(del_user) == 1:
-            str_del_user = '('+str(del_user[0])+')'  # 元组只有一个元素的时候会多逗号
+            str_del_user = '(' + str(del_user[0]) + ')'  # 元组只有一个元素的时候会多逗号
         else:
             str_del_user = str(del_user)
         text = '已选择{}个用户。从数据库中删除选中用户，同时删除相应人脸数据，<font color=red>该操作不可逆！</font>'.format(len(del_user))

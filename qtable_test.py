@@ -13,7 +13,7 @@ class ui(QWidget):
         super().__init__()
         self.setupUI()
         self.id = 1
-        self.lines = []
+        self.lines = []  # 维护一个list记录表格中所有数据
         self.editable = True
         self.des_sort = True
         self.faker = Factory.create()
@@ -74,10 +74,10 @@ class ui(QWidget):
         row = self.table.rowCount()
         self.table.setRowCount(row + 1)
         id = str(self.id)
-        ck = QCheckBox()
+        ck = QCheckBox()  # 复选框实例
         h = QHBoxLayout()
         h.setAlignment(Qt.AlignCenter)
-        h.addWidget(ck)
+        h.addWidget(ck)  # 设置复选框
         w = QWidget()
         w.setLayout(h)
         name = self.faker.name()  # 自动创建假名
@@ -89,20 +89,20 @@ class ui(QWidget):
         self.table.setItem(row, 3, QTableWidgetItem(score))
         self.table.setItem(row, 4, QTableWidgetItem(add))
         self.id += 1
-        self.lines.append([id, ck, name, score, add])
+        self.lines.append([id, ck, name, score, add])  # 增加数据时插入新list
         self.settext('自动生成随机一行数据！,checkbox设置为居中显示')
         self.table.cellChanged.connect(self.cellchange)
 
     def del_line(self):
         removeline = []
-        for line in self.lines:
-            if line[1].isChecked():
-                row = self.table.rowCount()
-                for x in range(row, 0, -1):
-                    if line[0] == self.table.item(x - 1, 0).text():
+        for line in self.lines:  # 遍历list相当于遍历了当前表格中所有数据
+            if line[1].isChecked():  # 列表中的复选框状态可以改变，如果当前行被选中
+                row = self.table.rowCount()  # 当前行数
+                for x in range(row, 0, -1):  # 倒叙遍历所有行
+                    if line[0] == self.table.item(x - 1, 0).text():  # 若当前行的学号等于表格中正在遍历行的id，则删除这一行
                         self.table.removeRow(x - 1)
                         removeline.append(line)
-        for line in removeline:
+        for line in removeline:  # 因为无法一边遍历一边删
             self.lines.remove(line)
         self.settext('删除在左边checkbox中选中的行，使用了一个笨办法取得行号\n，不知道有没有其他可以直接取得行号的方法！')
 
