@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1545</width>
-    <height>941</height>
+    <width>1637</width>
+    <height>931</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -222,6 +222,16 @@
                  </property>
                 </widget>
                </item>
+               <item>
+                <widget class="QPushButton" name="ExportExcelpushButton">
+                 <property name="enabled">
+                  <bool>false</bool>
+                 </property>
+                 <property name="text">
+                  <string>导出Excel表格</string>
+                 </property>
+                </widget>
+               </item>
               </layout>
              </item>
             </layout>
@@ -282,36 +292,42 @@
              <string>训练数据</string>
             </property>
             <layout class="QGridLayout" name="gridLayout_6">
-             <item row="0" column="0">
+             <item row="1" column="0">
               <widget class="QGroupBox" name="imgPreprocessGroupBox">
                <property name="title">
                 <string>图像预处理</string>
                </property>
-               <widget class="QCheckBox" name="equalizeHistCheckBox">
-                <property name="geometry">
-                 <rect>
-                  <x>12</x>
-                  <y>27</y>
-                  <width>109</width>
-                  <height>19</height>
-                 </rect>
-                </property>
-                <property name="text">
-                 <string>直方图均衡化</string>
-                </property>
-               </widget>
+               <layout class="QHBoxLayout" name="horizontalLayout_5">
+                <item>
+                 <widget class="QPushButton" name="trainButton">
+                  <property name="enabled">
+                   <bool>false</bool>
+                  </property>
+                  <property name="toolTip">
+                   <string>数据库未完成初始化，请检查</string>
+                  </property>
+                  <property name="text">
+                   <string>局部二值模式训练</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="dlibButton">
+                  <property name="enabled">
+                   <bool>false</bool>
+                  </property>
+                  <property name="text">
+                   <string>dlib特征点提取</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
               </widget>
              </item>
-             <item row="1" column="0">
-              <widget class="QPushButton" name="trainButton">
-               <property name="enabled">
-                <bool>false</bool>
-               </property>
-               <property name="toolTip">
-                <string>数据库未完成初始化，请检查</string>
-               </property>
+             <item row="2" column="0">
+              <widget class="QCheckBox" name="equalizeHistCheckBox">
                <property name="text">
-                <string>开始训练</string>
+                <string>直方图均衡化</string>
                </property>
               </widget>
              </item>

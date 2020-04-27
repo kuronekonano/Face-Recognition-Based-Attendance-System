@@ -217,6 +217,19 @@
         </widget>
        </item>
        <item>
+        <widget class="QCheckBox" name="haar_faceTrackerCheckBox">
+         <property name="enabled">
+          <bool>true</bool>
+         </property>
+         <property name="text">
+          <string>Haar人脸跟踪</string>
+         </property>
+         <property name="checked">
+          <bool>false</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QCheckBox" name="faceRecognizerCheckBox">
          <property name="enabled">
           <bool>false</bool>
@@ -262,7 +275,7 @@
        <rect>
         <x>11</x>
         <y>21</y>
-        <width>155</width>
+        <width>141</width>
         <height>91</height>
        </rect>
       </property>

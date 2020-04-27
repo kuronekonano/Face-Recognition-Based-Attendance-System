@@ -170,7 +170,8 @@ class DataRecordUI(QWidget):
                                                         "./",
                                                         'JEPG files(*.jpg);;PNG files(*.PNG)')
         self.image_paths = self.image_paths[0]
-        progress_bar = Actions(self)
+        progress_bar = ActionsImportImage(self)
+        print('import success!')
 
     # 图片批量导入【主线程】
     def import_images_data(self):
@@ -646,10 +647,11 @@ class DataRecordUI(QWidget):
         self.logTextEdit.insertPlainText(log)  # 末尾插入日志消息
         self.logTextEdit.ensureCursorVisible()  # 自动滚屏
 
-    def message_output(self, log):
+    @staticmethod
+    def message_output(log):
         text, informative_text = log.get('text'), log.get('informativeText')
         # print(text, informative_text)
-        DataRecordUI.callDialog(QMessageBox.Critical, text, informative_text, QMessageBox.Ok)
+        DataRecordUI.callDialog(QMessageBox.Information, text, informative_text, QMessageBox.Ok)
 
     # 系统对话框
     @staticmethod
@@ -742,7 +744,7 @@ class ImportImageThread(QThread):
                 DataRecordUI.logQueue.put('命名错误!文件 {} 存在问题，数据库中没有以该图片名为学号的用户。'.format(path))
                 error_count += 1
                 continue
-            dstpath = '{}/stu_{}/img.{}.jpg'.format(self.data_record.datasets, stu_id, stu_id + '-0')
+            dstpath = '{}/stu_{}/img{}.jpg'.format(self.data_record.datasets, stu_id, '-0')
             try:
                 shutil.copy(path, dstpath)
             except:
@@ -756,7 +758,7 @@ class ImportImageThread(QThread):
 
 
 # 进度条
-class Actions(QDialog):
+class ActionsImportImage(QDialog):
     """
     Simple dialog that consists of a Progress Bar and a Button.
     Clicking on the button results in the start of a timer and
@@ -764,7 +766,7 @@ class Actions(QDialog):
     """
 
     def __init__(self, datarecord):
-        super(Actions,self).__init__()
+        super(ActionsImportImage, self).__init__()
         self.data_record = datarecord
         self.initUI()
 
@@ -776,13 +778,13 @@ class Actions(QDialog):
         self.image_thread = ImportImageThread(self.data_record)  # 导入图片线程实例
         self.image_thread.progress_bar_signal.connect(self.onCountChanged)  # 信号槽函数绑定
         self.image_thread.start()
-        self.show()
-        self.image_thread.exec()
+        self.exec()
+        # 注意此处有坑，进度条对话框应该使用exec()事件循环而不是show()，使用show()与QThread时会导致对话框无法完全结束，后续语句无法执行
 
     def onCountChanged(self, value):
         self.progress.setValue(int(value + 0.5))
         if int(value + 0.5) >= 100:
-            time.sleep(2)
+            time.sleep(1)
             self.close()
 
 

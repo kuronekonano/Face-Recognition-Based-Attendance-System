@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 # Author: kuronekonano <god772525182@gmail.com>
+import re
 
 import cv2
 import numpy as np
 import pymysql
+import xlwt as ExcelWrite
+from xlwt import Borders, XFStyle, Pattern
 
 from PyQt5.QtCore import pyqtSignal, QThread, Qt, QObject
 from PyQt5.QtGui import QIcon, QTextCursor
@@ -15,13 +18,14 @@ import logging
 import logging.config
 import os
 import shutil
-import sqlite3
 import sys
 import threading
 import multiprocessing
 
 from datetime import datetime
 from dataRecord import DataRecordUI
+
+haar_face_cascade = cv2.CascadeClassifier('./haarcascades/haarcascade_frontalface_default.xml')  # 加载分类器
 
 
 # 自定义数据库记录不存在异常
@@ -39,7 +43,7 @@ class DataManageUI(QWidget):
         super(DataManageUI, self).__init__()
         loadUi('./ui/DataManage.ui', self)
         self.setWindowIcon(QIcon('./icons/icon.png'))
-        # self.setFixedSize(1511, 941)
+        # self.setFixedSize(1511, 941)  # 加上后就规定了窗口大小，且不可缩放
 
         # 设置tableWidget只读，不允许修改
         self.tableWidget.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -79,6 +83,7 @@ class DataManageUI(QWidget):
         self.queryUserButton.clicked.connect(self.queryUser)
         self.deleteUserButton.clicked.connect(self.deleteUser)
         self.CellChangeButton.clicked.connect(self.modify_line)  # 启用/禁用编辑功能
+        self.ExportExcelpushButton.clicked.connect(self.check_table)
 
         # 直方图均衡化
         self.isEqualizeHistEnabled = False
@@ -87,6 +92,7 @@ class DataManageUI(QWidget):
 
         # 训练人脸数据
         self.trainButton.clicked.connect(self.train)
+        self.dlibButton.clicked.connect(self.train_by_dlib)
 
         # 系统日志
         self.receiveLogSignal.connect(lambda log: self.logOutput(log))
@@ -98,11 +104,16 @@ class DataManageUI(QWidget):
         self.LikeSelectCheckBox.stateChanged.connect(
             lambda: self.is_like_select(self.LikeSelectCheckBox))
 
+    # 模糊查询开关
     def is_like_select(self, like_select_checkbox):
         if like_select_checkbox.isChecked():
             self.enable_like_select = True
         else:
             self.enable_like_select = False
+
+    def check_table(self):
+        self.export_excel_dialog = ExportExcelDialog()
+        self.export_excel_dialog.exec()
 
     # 数据修改提交数据库
     def cell_change(self, row, col):
@@ -215,7 +226,7 @@ class DataManageUI(QWidget):
         select_items = self.tableWidget.selectedItems()[::self.tableWidget.columnCount()]  # 取出所有选择数据中的学号
         self.current_select.update(
             map(lambda x: x.text(), select_items))  # 更新学号信息到set集合中,因为用的是map映射整个list的内容，因此用update而不是add
-        print(self.current_select)
+        # print(self.current_select)
         if self.current_select and self.CellChangeButton.text() != '禁用编辑':
             self.deleteUserButton.setEnabled(True)
         else:
@@ -281,6 +292,7 @@ class DataManageUI(QWidget):
                 self.CellChangeButton.setToolTip('')
                 self.CellChangeButton.setEnabled(True)  # 启用编辑开关
                 self.deleteUserButton.setToolTip('')
+                self.ExportExcelpushButton.setEnabled(True)  # 启用导出表格按钮
             else:
                 self.logQueue.put('Success：刷新数据库成功，发现用户数：{}'.format(dbUserCount))
 
@@ -381,62 +393,8 @@ class DataManageUI(QWidget):
             finally:
                 conn.close()
 
-    # 检测人脸
-    def detectFace(self, img):
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # 灰度图
-        if self.isEqualizeHistEnabled:  # 直方均衡化
-            gray = cv2.equalizeHist(gray)
-        face_cascade = cv2.CascadeClassifier('./haarcascades/haarcascade_frontalface_default.xml')  # 加载分类器
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5, minSize=(90, 90))  # 抠脸
-
-        if len(faces) == 0:
-            return None, None
-        (x, y, w, h) = faces[0]
-        return gray[y:y + w, x:x + h], faces[0]
-
-    # 准备图片数据，参数为数据集路径
-    def prepareTrainingData(self, data_folder_path):
-        dirs = os.listdir(data_folder_path)  # 返回指定的文件夹包含的文件或文件夹的名字的列表
-        faces = []
-        labels = []
-
-        face_id = 1
-
-        conn, cursor = self.connect_to_sql()
-
-        # 遍历人脸库
-        for dir_name in dirs:
-            if not dir_name.startswith('stu_'):  # 跳过不合法的图片集
-                continue
-            stu_id = dir_name.replace('stu_', '')  # 获取图片集对应的学号
-            try:
-                cursor.execute('SELECT * FROM users WHERE stu_id=%s', (stu_id,))  # 根据学号查询学生信息
-                ret = cursor.fetchall()
-                if not ret:
-                    raise RecordNotFound  # 在try里raise错误类型，在except里再处理
-                cursor.execute('UPDATE users SET face_id=%s WHERE stu_id=%s', (face_id, stu_id,))  # 对可以训练的人脸设置face_id
-            except RecordNotFound:
-                logging.warning('数据库中找不到学号为{}的用户记录'.format(stu_id))
-                self.logQueue.put('发现学号为{}的人脸数据，但数据库中找不到相应记录，已忽略'.format(stu_id))
-                continue
-            subject_dir_path = data_folder_path + '/' + dir_name  # 子目录
-            subject_images_names = os.listdir(subject_dir_path)  # 获取所有图片名
-            for image_name in subject_images_names:
-                if image_name.startswith('.'):  # 忽略隐藏文件
-                    continue
-                image_path = subject_dir_path + '/' + image_name
-                image = cv2.imread(image_path)  # 读取图片
-                face, rect = self.detectFace(image)  # 探测人脸，返回
-                if face is not None:
-                    faces.append(face)  # D到的脸放入list
-                    labels.append(face_id)  # face_id放入标签，同一个人的脸同一个face_id
-            face_id = face_id + 1
-
-        cursor.close()
-        conn.commit()
-        conn.close()
-
-        return faces, labels
+    def train_by_dlib(self):
+        pass
 
     # 训练人脸数据
     # Reference：https://github.com/informramiz/opencv-face-recognition-python
@@ -451,12 +409,7 @@ class DataManageUI(QWidget):
                                           QMessageBox.Yes | QMessageBox.No,
                                           QMessageBox.No)
             if ret == QMessageBox.Yes:
-                face_recognizer = cv2.face.LBPHFaceRecognizer_create()
-                if not os.path.exists('./recognizer'):
-                    os.makedirs('./recognizer')
-                faces, labels = self.prepareTrainingData(self.datasets)  # 准备图片数据
-                face_recognizer.train(faces, np.array(labels))
-                face_recognizer.save('./recognizer/trainingData.yml')
+                progress_bar = ActionsTrainByLBPH(self)
         except FileNotFoundError:
             logging.error('系统找不到人脸数据目录{}'.format(self.datasets))
             self.trainButton.setIcon(QIcon('./icons/error.png'))
@@ -503,6 +456,245 @@ class DataManageUI(QWidget):
         if defaultButton:
             msg.setDefaultButton(defaultButton)
         return msg.exec()
+
+
+# 进度条
+class ActionsTrainByLBPH(QDialog):
+    """
+    Simple dialog that consists of a Progress Bar and a Button.
+    Clicking on the button results in the start of a timer and
+    updates the progress bar.
+    """
+
+    def __init__(self, datamanage):
+        super(ActionsTrainByLBPH,self).__init__()
+        self.data_manage = datamanage
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle('正在训练模型...')
+        self.progress = QProgressBar(self)
+        self.progress.setGeometry(0, 0, 300, 25)
+        self.progress.setMaximum(100)
+        self.train_data = TrainData(self.data_manage)  # 导入图片线程实例
+        self.train_data.progress_bar_signal.connect(self.onCountChanged)  # 信号槽函数绑定
+        self.train_data.start()
+        self.exec()
+        # 注意此处有坑，进度条对话框应该使用exec()事件循环而不是show()，使用show()与QThread时会导致对话框无法完全结束，后续语句无法执行
+
+
+    def onCountChanged(self, value):
+        self.progress.setValue(value)
+        if value >= 100:
+            self.close()
+    # 关于训练过程独立出线程执行，并使用进度条更新的方法
+    # 因为训练过程比较耗时的是检测脸与读取图片数据集，并且只有此处是循环每个人的遍历
+    # 因此将进度条主要展现的是读取数据，而不是训练数据，训练数据耗时相对不多，因此完全结束后只占进度条的1%
+    # 为实现训练函数的整个过程，将读取数据，训练数据，脸部检测 的处理函数全部挪到该线程中执行
+
+
+class TrainData(QThread):
+    progress_bar_signal = pyqtSignal(float)
+
+    def __init__(self, data_manage):
+        super(TrainData, self).__init__()
+        self.data_manage = data_manage
+
+    def run(self) -> None:
+        face_recognizer = cv2.face.LBPHFaceRecognizer_create()
+        if not os.path.exists('./recognizer'):
+            os.makedirs('./recognizer')
+        faces, labels = self.prepareTrainingData(self.data_manage.datasets)  # 准备图片数据
+        face_recognizer.train(faces, np.array(labels))
+        face_recognizer.save('./recognizer/trainingData.yml')
+        self.progress_bar_signal.emit(100)
+
+    # 准备图片数据，参数为数据集路径
+    def prepareTrainingData(self, data_folder_path):
+        dirs = os.listdir(data_folder_path)  # 返回指定的文件夹包含的文件或文件夹的名字的列表
+        faces = []
+        labels = []
+
+        face_id = 1
+
+        conn, cursor = DataManageUI.connect_to_sql()
+        people_count = len(dirs)
+        # 遍历人脸库
+        for index, dir_name in enumerate(dirs):
+            bar = index / people_count * 100
+            self.progress_bar_signal.emit(bar)
+            if not dir_name.startswith('stu_'):  # 跳过不合法的图片集
+                continue
+            stu_id = dir_name.replace('stu_', '')  # 获取图片集对应的学号
+            try:
+                cursor.execute('SELECT * FROM users WHERE stu_id=%s', (stu_id,))  # 根据学号查询学生信息
+                ret = cursor.fetchall()
+                if not ret:
+                    raise RecordNotFound  # 在try里raise错误类型，在except里再处理
+                cursor.execute('UPDATE users SET face_id=%s WHERE stu_id=%s', (face_id, stu_id,))  # 对可以训练的人脸设置face_id
+            except RecordNotFound:
+                logging.warning('数据库中找不到学号为{}的用户记录'.format(stu_id))
+                DataManageUI.logQueue.put('发现学号为{}的人脸数据，但数据库中找不到相应记录，已忽略'.format(stu_id))
+                continue
+            subject_dir_path = data_folder_path + '/' + dir_name  # 子目录
+            subject_images_names = os.listdir(subject_dir_path)  # 获取所有图片名
+            for image_name in subject_images_names:
+                if image_name.startswith('.'):  # 忽略隐藏文件
+                    continue
+                image_path = subject_dir_path + '/' + image_name
+                image = cv2.imread(image_path)  # 读取图片
+                face, rect = self.detectFace(image)  # 探测人脸，返回
+                if face is not None:
+                    faces.append(face)  # 检测到的脸放入list
+                    labels.append(face_id)  # face_id放入标签，同一个人的脸同一个face_id
+            face_id = face_id + 1
+
+        cursor.close()
+        conn.commit()
+        conn.close()
+
+        return faces, labels
+
+    # 检测人脸
+    def detectFace(self, img):
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # 灰度图
+        if self.data_manage.isEqualizeHistEnabled:  # 直方均衡化
+            gray = cv2.equalizeHist(gray)
+        faces = haar_face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5, minSize=(90, 90))  # 抠脸
+
+        if len(faces) == 0:
+            return None, None
+        (x, y, w, h) = faces[0]
+        return gray[y:y + w, x:x + h], faces[0]
+
+# TODO: 将train单独出现一个线程来跑。   写dlib的train并存储到CSV文件中新建文件夹保存CSV文件，文件夹中每个人单独作为一个CSV？或者.yml也可以这样改，不过
+# 非常占用空间，读取也需要时间。但是删除和增加可以分别管理。 可以接受删除学生时不删除人脸，但增加学生时CSV尽量追加写入，而.yml需要全部重新训练
+# 识别模块需要加入读取CSV训练数据，遍历所有人脸数据计算欧氏距离，然后输出结果。不知道准确度和速度
+# 计算出勤率，导出表格（导出后可以计算单次课堂的出勤率），接入API，出勤率可以选择学生，创建班级，输入总次数，计算单个人整学期出勤率，以及全班平均出勤率
+# 触发器记录单个学生签到总次数
+
+
+class ExportExcelDialog(QDialog):
+
+    def __init__(self):
+        super(ExportExcelDialog, self).__init__()
+        loadUi('./ui/export_excel.ui', self)
+        self.setWindowIcon(QIcon('./icons/icon.png'))
+
+        # 只读，不允许修改
+        self.show_sqlTable.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.StuCheckTable.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        # 表头自动伸缩×
+        self.show_sqlTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.StuCheckTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+        self.select_table_pushButton.clicked.connect(self.select_table_show)
+        self.export_pushButton.clicked.connect(self.export_to_excel)
+
+        conn, cursor = DataManageUI.connect_to_sql()
+        table_list = self.get_sql_table(cursor)
+        cursor.close()
+        conn.commit()
+        conn.close()
+        self.print_sql_tablelist(table_list)
+
+    # 获取数据库表名
+    @staticmethod
+    def get_sql_table(cursor):
+        sql = "show tables;"
+        cursor.execute(sql)
+        tables = [cursor.fetchall()]
+        table_list = re.findall('(\'.*?\')', str(tables))
+        table_list = [re.sub("'", '', each) for each in table_list]
+        return table_list
+
+    # 输出表名到表格中
+    def print_sql_tablelist(self, table_list):
+        while self.show_sqlTable.rowCount() > 0:
+            self.show_sqlTable.removeRow(0)
+        for row_index, row_data in enumerate(table_list):
+            self.show_sqlTable.insertRow(row_index)  # 插入行
+            self.show_sqlTable.setItem(row_index, 0, QTableWidgetItem(str(row_data)))  # 设置单元格文本
+
+    def select_table_show(self):
+        self.select_table = self.show_sqlTable.selectedItems()[0].text()
+        # print(select_table)
+        try:
+            conn, cursor = DataManageUI.connect_to_sql()
+
+            if not DataRecordUI.table_exists(cursor, self.select_table):
+                raise FileNotFoundError
+            sql_select = 'SELECT * FROM `%s`' % self.select_table
+            cursor.execute(sql_select)
+            conn.commit()
+            stu_data = cursor.fetchall()
+            if len(stu_data[0]) != self.StuCheckTable.columnCount():
+                text = 'Error!'
+                informativeText = '<b>表格格式不正确，请重新选择正确的签到表格。</b>'
+                DataRecordUI.callDialog(QMessageBox.Critical, text, informativeText, QMessageBox.Ok)
+                return
+            while self.StuCheckTable.rowCount() > 0:
+                self.StuCheckTable.removeRow(0)
+            for row_index, row_data in enumerate(stu_data):
+                self.StuCheckTable.insertRow(row_index)  # 插入行
+                for col_index, col_data in enumerate(row_data):  # 插入列
+                    self.StuCheckTable.setItem(row_index, col_index, QTableWidgetItem(str(col_data)))  # 设置单元格文本
+            self.export_pushButton.setEnabled(True)
+        except FileNotFoundError:
+            logging.error('系统找不到数据库表{}'.format(self.select_table))
+        except Exception as e:
+            print(e)
+            logging.error('读取数据库异常，无法完成数据库查询')
+        else:
+            cursor.close()
+            conn.close()
+
+    def start_export_data_thread(self):
+        threading.Thread(target=self.export_to_excel,).start()  # 线程写入Excel表格
+
+    def export_to_excel(self):
+        if not os.path.isdir('./export_excel'):  # 临时存储目录
+            os.makedirs('./export_excel')
+        save_path = os.path.join('./export_excel', self.select_table + '.xls')
+        head_list = ['学号', '姓名', '是否出勤', '出勤时间']
+        xls = ExcelWrite.Workbook()  # 创建Excel控制对象
+        sheet = xls.add_sheet("Sheet1")  # 创建被写入的表格sheet1
+        style = XFStyle()
+        pattern = Pattern()  # 创建一个模式
+        pattern.pattern = Pattern.SOLID_PATTERN  # 设置其模式为实型
+        pattern.pattern_fore_colour = 0x16  # 设置其模式单元格背景色
+        # 设置单元格背景颜色 0 = Black, 1 = White, 2 = Red, 3 = Green, 4 = Blue, 5 = Yellow, 6 = Magenta,  the list goes on...
+        style.pattern = pattern
+        for col in range(len(head_list)):  # 写入首行信息，为表头，表示列名
+            sheet.write(0, col, head_list[col], style)
+            sheet.col(col).width = 4240
+
+        try:
+            # 连接数据库读取数据
+            conn, cursor = DataManageUI.connect_to_sql()
+            sql = 'select * from `%s`' % self.select_table
+            cursor.execute(sql)
+            row = 0
+            stu_data = cursor.fetchall()
+            for stu_info in stu_data:  # 遍历数据库中每行信息，一行表示一部电影的所有信息
+                stu_info = list(stu_info)
+                if stu_info[3]:
+                    stu_info[3] = stu_info[3].strftime('%Y/%m/%d %H:%M:%S')
+                row = row + 1  # 第0行为表头，不添加数据，因此从第一列开始写入
+                for col in range(len(stu_info)):  # 对于一行信息进行遍历，分别存入每列
+                    sheet.write(row, col, stu_info[col])
+
+            xls.save(save_path)  # 写入完成，存储
+            cursor.close()
+            conn.close()
+            text = 'Success!'
+            informativeText = '<b>课程{}签到表 导出成功!</b>'.format(self.select_table)
+            DataRecordUI.callDialog(QMessageBox.Information, text, informativeText, QMessageBox.Ok)
+        except Exception as e:
+            print(e)
+            text = 'Error!'
+            informativeText = '<b>导出失败!</b>'
+            DataRecordUI.callDialog(QMessageBox.Critical, text, informativeText, QMessageBox.Ok)
 
 
 if __name__ == '__main__':
