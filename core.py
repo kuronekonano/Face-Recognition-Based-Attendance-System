@@ -235,6 +235,8 @@ class CoreUI(QMainWindow):
                     insert_sql = '''INSERT INTO `%s` (stu_id, cn_name) VALUES ("%s", "%s")''' % (
                         self.class_name, stu_id, cn_name)
                     cursor.execute(insert_sql)
+                    update_user_course_count = 'UPDATE `users` SET total_course_count=total_course_count+1 WHERE stu_id="%s"' % stu_id
+                    cursor.execute(update_user_course_count)
         except Exception as e:
             logging.error('读取数据库异常，无法完成数据存储')
             CoreUI.logQueue.put('Error：数据存储失败')
@@ -382,6 +384,8 @@ class CoreUI(QMainWindow):
                     update_sql = 'UPDATE `%s` SET attendance="%s", attendance_time="%s" WHERE stu_id="%s"' % (
                         class_name, 1, timestamp, stu_id)
                     cursor.execute(update_sql)
+                    update_user_sql = 'UPDATE `users` SET total_attendance_times=total_attendance_times+1 WHERE stu_id="%s"' % stu_id
+                    cursor.execute(update_user_sql)
         except Exception as e:
             logging.error('读取数据库异常，无法完成数据存储')
             CoreUI.logQueue.put('Error：数据存储失败')

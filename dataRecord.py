@@ -112,13 +112,8 @@ class DataRecordUI(QWidget):
         self.isExcel_path_ready = False
         self.ExcelpathButton.clicked.connect(self.import_excel_data)
 
-    # 表格导入学生信息
-    def import_excel_data(self):
-
-        excel_paths = QFileDialog.getOpenFileNames(self, '选择表格',
-                                                   "./",
-                                                   'EXCEL 文件 (*.xlsx;*.xls;*.xlm;*.xlt;*.xlsm;*.xla)')
-        excel_paths = excel_paths[0]
+    @staticmethod
+    def connect_to_sql():
         conn = pymysql.connect(host='localhost',
                                user='root',
                                password='970922',
@@ -126,6 +121,16 @@ class DataRecordUI(QWidget):
                                port=3306,
                                charset='utf8')
         cursor = conn.cursor()
+        return conn, cursor
+
+    # 表格导入学生信息
+    def import_excel_data(self):
+
+        excel_paths = QFileDialog.getOpenFileNames(self, '选择表格',
+                                                   "./",
+                                                   'EXCEL 文件 (*.xlsx;*.xls;*.xlm;*.xlt;*.xlsm;*.xla)')
+        excel_paths = excel_paths[0]
+        conn, cursor = self.connect_to_sql()
         error_count = 0
         for path in excel_paths:
             sheets_file = xlrd.open_workbook(path)
@@ -389,13 +394,7 @@ class DataRecordUI(QWidget):
 
     # 检查数据库
     def initDb(self):
-        conn = pymysql.connect(host='localhost',
-                               user='root',
-                               password='970922',
-                               db='mytest',
-                               port=3306,
-                               charset='utf8')
-        cursor = conn.cursor()
+        conn, cursor = self.connect_to_sql()
 
         try:
             if not self.table_exists(cursor, 'users'):
@@ -410,13 +409,12 @@ class DataRecordUI(QWidget):
                                               sex int(2) DEFAULT NULL,
                                               province VARCHAR(40) NOT NULL,
                                               nation VARCHAR(40) NOT NULL,
-                                              last_attendance_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                              total_course_count INT DEFAULT 0,
                                               total_attendance_times INT NOT NULL DEFAULT 0,
                                               created_time DATETIME DEFAULT CURRENT_TIMESTAMP
                                               )
                                           '''
-
-                cursor.execute()
+                cursor.execute(create_table_sql)
             # 查询数据表记录数
             cursor.execute('SELECT Count(*) FROM users')
             result = cursor.fetchone()
@@ -426,6 +424,7 @@ class DataRecordUI(QWidget):
             self.isDbReady = False
             self.initDbButton.setIcon(QIcon('./icons/error.png'))
             self.logQueue.put('Error：初始化数据库失败')
+            print(e)
         else:
             self.isDbReady = True
             self.dbUserCountLcdNum.display(db_user_count)
@@ -575,13 +574,7 @@ class DataRecordUI(QWidget):
             stu_id = self.userInfo.get('stu_id')
             cn_name = self.userInfo.get('cn_name')
 
-            conn = pymysql.connect(host='localhost',
-                                   user='root',
-                                   password='970922',
-                                   db='mytest',
-                                   port=3306,
-                                   charset='utf8')
-            cursor = conn.cursor()
+            conn, cursor = self.connect_to_sql()
 
             try:
                 db_user_count = self.commit_to_database(cursor)
