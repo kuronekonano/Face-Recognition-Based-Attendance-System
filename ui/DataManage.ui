@@ -316,6 +316,9 @@
                   <property name="enabled">
                    <bool>false</bool>
                   </property>
+                  <property name="toolTip">
+                   <string>数据库未完成初始化，请检查</string>
+                  </property>
                   <property name="text">
                    <string>dlib特征点提取</string>
                   </property>

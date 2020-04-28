@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # Author: kuronekonano <god772525182@gmail.com>
+import csv
 import re
 
 import cv2
+import dlib
 import numpy as np
 import pymysql
 import xlwt as ExcelWrite
@@ -26,6 +28,10 @@ from datetime import datetime
 from dataRecord import DataRecordUI
 
 haar_face_cascade = cv2.CascadeClassifier('./haarcascades/haarcascade_frontalface_default.xml')  # 加载分类器
+predictor_5 = dlib.shape_predictor('./shape_predictor_5_face_landmarks.dat')  # 5特征点模型
+predictor_68 = dlib.shape_predictor('./shape_predictor_68_face_landmarks.dat')  # 68特征点模型
+face_rec = dlib.face_recognition_model_v1("dlib_face_recognition_resnet_model_v1.dat")  # 人脸识别器模型
+dlib_detector = dlib.get_frontal_face_detector()  # dlib 人脸检测器
 
 
 # 自定义数据库记录不存在异常
@@ -286,13 +292,15 @@ class DataManageUI(QWidget):
                 self.initDbButton.setText('刷新数据库')  # 改变按钮文本
                 self.initDbButton.setIcon(QIcon('./icons/success.png'))
                 self.trainButton.setToolTip('')
-                self.trainButton.setEnabled(True)  # 启用训练按钮
+                self.trainButton.setEnabled(True)  # 启用LBPH训练按钮
                 self.queryUserButton.setToolTip('')
                 self.queryUserButton.setEnabled(True)  # 启用查询按钮
                 self.CellChangeButton.setToolTip('')
                 self.CellChangeButton.setEnabled(True)  # 启用编辑开关
                 self.deleteUserButton.setToolTip('')
                 self.ExportExcelpushButton.setEnabled(True)  # 启用导出表格按钮
+                self.dlibButton.setToolTip('')
+                self.dlibButton.setEnabled(True)  # 启用dlib训练按钮
             else:
                 self.logQueue.put('Success：刷新数据库成功，发现用户数：{}'.format(dbUserCount))
 
@@ -394,7 +402,32 @@ class DataManageUI(QWidget):
                 conn.close()
 
     def train_by_dlib(self):
-        pass
+        try:
+            if not os.path.isdir(self.datasets):
+                raise FileNotFoundError
+
+            text = '系统将开始提取人脸特征，界面会暂停响应一段时间，完成后会弹出提示。'
+            informativeText = '<b>训练过程请勿进行其它操作，是否继续？</b>'
+            ret = DataManageUI.callDialog(QMessageBox.Question, text, informativeText,
+                                          QMessageBox.Yes | QMessageBox.No,
+                                          QMessageBox.No)
+            if ret == QMessageBox.Yes:
+                progress_bar = ActionsTrainByDlib(self)
+        except FileNotFoundError:
+            logging.error('系统找不到人脸数据目录{}'.format(self.datasets))
+            self.dlibButton.setIcon(QIcon('./icons/error.png'))
+            self.logQueue.put('未发现人脸数据目录{}，你可能未进行人脸采集'.format(self.datasets))
+        except Exception as e:
+            logging.error('遍历人脸库出现异常，训练人脸数据失败')
+            self.dlibButton.setIcon(QIcon('./icons/error.png'))
+            self.logQueue.put('Error：遍历人脸库出现异常，训练失败')
+        else:
+            text = '<font color=green><b>Success!</b></font> 系统已生成./dlib_128D_csv/features_all.csv'
+            informativeText = '<b>人脸特征提取完成！</b>'
+            DataManageUI.callDialog(QMessageBox.Information, text, informativeText, QMessageBox.Ok)
+            self.dlibButton.setIcon(QIcon('./icons/success.png'))
+            self.logQueue.put('Success：dlib人脸数据特征提取完成')
+            self.initDb()
 
     # 训练人脸数据
     # Reference：https://github.com/informramiz/opencv-face-recognition-python
@@ -458,7 +491,7 @@ class DataManageUI(QWidget):
         return msg.exec()
 
 
-# 进度条
+# LBPH进度条
 class ActionsTrainByLBPH(QDialog):
     """
     Simple dialog that consists of a Progress Bar and a Button.
@@ -467,7 +500,7 @@ class ActionsTrainByLBPH(QDialog):
     """
 
     def __init__(self, datamanage):
-        super(ActionsTrainByLBPH,self).__init__()
+        super(ActionsTrainByLBPH, self).__init__()
         self.data_manage = datamanage
         self.initUI()
 
@@ -482,7 +515,6 @@ class ActionsTrainByLBPH(QDialog):
         self.exec()
         # 注意此处有坑，进度条对话框应该使用exec()事件循环而不是show()，使用show()与QThread时会导致对话框无法完全结束，后续语句无法执行
 
-
     def onCountChanged(self, value):
         self.progress.setValue(value)
         if value >= 100:
@@ -493,6 +525,7 @@ class ActionsTrainByLBPH(QDialog):
     # 为实现训练函数的整个过程，将读取数据，训练数据，脸部检测 的处理函数全部挪到该线程中执行
 
 
+# LBPH模型训练
 class TrainData(QThread):
     progress_bar_signal = pyqtSignal(float)
 
@@ -536,12 +569,12 @@ class TrainData(QThread):
                 logging.warning('数据库中找不到学号为{}的用户记录'.format(stu_id))
                 DataManageUI.logQueue.put('发现学号为{}的人脸数据，但数据库中找不到相应记录，已忽略'.format(stu_id))
                 continue
-            subject_dir_path = data_folder_path + '/' + dir_name  # 子目录
+            subject_dir_path = os.path.join(data_folder_path, dir_name)  # 子目录
             subject_images_names = os.listdir(subject_dir_path)  # 获取所有图片名
             for image_name in subject_images_names:
                 if image_name.startswith('.'):  # 忽略隐藏文件
                     continue
-                image_path = subject_dir_path + '/' + image_name
+                image_path = os.path.join(subject_dir_path, image_name)
                 image = cv2.imread(image_path)  # 读取图片
                 face, rect = self.detectFace(image)  # 探测人脸，返回
                 if face is not None:
@@ -555,7 +588,7 @@ class TrainData(QThread):
 
         return faces, labels
 
-    # 检测人脸
+    # haar检测人脸
     def detectFace(self, img):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # 灰度图
         if self.data_manage.isEqualizeHistEnabled:  # 直方均衡化
@@ -567,11 +600,119 @@ class TrainData(QThread):
         (x, y, w, h) = faces[0]
         return gray[y:y + w, x:x + h], faces[0]
 
+
 # TODO: 将train单独出现一个线程来跑。   写dlib的train并存储到CSV文件中新建文件夹保存CSV文件，文件夹中每个人单独作为一个CSV？或者.yml也可以这样改，不过
 # 非常占用空间，读取也需要时间。但是删除和增加可以分别管理。 可以接受删除学生时不删除人脸，但增加学生时CSV尽量追加写入，而.yml需要全部重新训练
 # 识别模块需要加入读取CSV训练数据，遍历所有人脸数据计算欧氏距离，然后输出结果。不知道准确度和速度
 # 计算出勤率，导出表格（导出后可以计算单次课堂的出勤率），接入API，出勤率可以选择学生，创建班级，输入总次数，计算单个人整学期出勤率，以及全班平均出勤率
 # 触发器记录单个学生签到总次数
+
+
+# LBPH进度条
+class ActionsTrainByDlib(QDialog):
+    """
+    Simple dialog that consists of a Progress Bar and a Button.
+    Clicking on the button results in the start of a timer and
+    updates the progress bar.
+    """
+
+    def __init__(self, datamanage):
+        super(ActionsTrainByDlib, self).__init__()
+        self.data_manage = datamanage
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle('正在训练模型...')
+        self.progress = QProgressBar(self)
+        self.progress.setGeometry(0, 0, 300, 25)
+        self.progress.setMaximum(100)
+        self.train_data_by_dlib = TrainDataByDlib(self.data_manage)  # 导入图片线程实例
+        self.train_data_by_dlib.progress_bar_signal.connect(self.onCountChanged)  # 信号槽函数绑定
+        self.train_data_by_dlib.start()
+        self.exec()  # 消息循环
+        # 注意此处有坑，进度条对话框应该使用exec()事件循环而不是show()，使用show()与QThread时会导致对话框无法完全结束，后续语句无法执行
+
+    def onCountChanged(self, value):
+        self.progress.setValue(value)
+        if value >= 100:
+            self.close()
+
+
+# Dlib特征点提取
+class TrainDataByDlib(QThread):
+    progress_bar_signal = pyqtSignal(float)
+
+    def __init__(self, data_manage):
+        super(TrainDataByDlib, self).__init__()
+        self.data_manage = data_manage
+
+    def run(self) -> None:
+        if not os.path.exists('./dlib_128D_csv'):
+            os.makedirs('./dlib_128D_csv')
+        data_folder_path = self.data_manage.datasets  # 准备图片数据
+
+        dirs = os.listdir(data_folder_path)  # 返回指定的文件夹包含的文件或文件夹的名字的列表
+
+        face_id = 1
+
+        conn, cursor = DataManageUI.connect_to_sql()
+        people_count = len(dirs)
+        # 遍历人脸库
+        with open('./dlib_128D_csv/features_all.csv', 'w', newline="") as csvfile:
+            writer = csv.writer(csvfile)
+            for index, dir_name in enumerate(dirs):
+                bar = index / people_count * 100
+                self.progress_bar_signal.emit(bar)
+                if not dir_name.startswith('stu_'):  # 跳过不合法命名的图片集
+                    continue
+                stu_id = dir_name.replace('stu_', '')  # 获取图片集对应的学号
+                try:
+                    cursor.execute('SELECT * FROM users WHERE stu_id=%s', (stu_id,))  # 根据学号查询学生信息
+                    ret = cursor.fetchall()
+                    if not ret:
+                        raise RecordNotFound  # 在try里raise错误类型，在except里再处理
+                    cursor.execute('UPDATE users SET face_id=%s WHERE stu_id=%s',
+                                   (face_id, stu_id,))  # 对可以训练的人脸设置face_id
+                except RecordNotFound:
+                    logging.warning('数据库中找不到学号为{}的用户记录'.format(stu_id))
+                    DataManageUI.logQueue.put('发现学号为{}的人脸数据，但数据库中找不到相应记录，已忽略'.format(stu_id))
+                    continue
+                subject_dir_path = os.path.join(data_folder_path, dir_name)  # 子目录
+                subject_images_names = os.listdir(subject_dir_path)  # 获取所有图片名
+                one_person_all_features = []
+                for image_name in subject_images_names:
+                    if image_name.startswith('.'):  # 忽略隐藏文件
+                        continue
+                    image_path = os.path.join(subject_dir_path, image_name)
+                    face_features = self.cal_128D_features(image_path)  # 探测人脸，返回
+                    if face_features == 0:
+                        continue
+                    one_person_all_features.append(face_features)
+                if one_person_all_features:
+                    features_mean = np.array(one_person_all_features).mean(axis=0)
+                else:
+                    features_mean = np.zeros(128, dtype=int, order='C')
+                face_id_list = np.full(128, face_id, dtype=int, order='C')
+                writer.writerow(face_id_list)
+                writer.writerow(features_mean)
+                face_id = face_id + 1
+
+        cursor.close()
+        conn.commit()
+        conn.close()
+
+        self.progress_bar_signal.emit(100)
+
+    # 检测人脸
+    def cal_128D_features(self, img_path):
+        img = cv2.imread(img_path)  # 读取图片
+        faces = dlib_detector(img, 1)  # 抠脸
+        if len(faces) == 0:
+            print("No Face!")
+            return 0
+        shape = predictor_68(img, faces[0])  # 提取脸部特征点
+        features = face_rec.compute_face_descriptor(img, shape)  # 计算特征值
+        return features
 
 
 class ExportExcelDialog(QDialog):
@@ -616,6 +757,7 @@ class ExportExcelDialog(QDialog):
             self.show_sqlTable.insertRow(row_index)  # 插入行
             self.show_sqlTable.setItem(row_index, 0, QTableWidgetItem(str(row_data)))  # 设置单元格文本
 
+    # 选择表格并预览内容
     def select_table_show(self):
         self.select_table = self.show_sqlTable.selectedItems()[0].text()
         # print(select_table)
@@ -649,11 +791,9 @@ class ExportExcelDialog(QDialog):
             cursor.close()
             conn.close()
 
-    def start_export_data_thread(self):
-        threading.Thread(target=self.export_to_excel,).start()  # 线程写入Excel表格
-
+    # 导出最后一次选择的表格
     def export_to_excel(self):
-        if not os.path.isdir('./export_excel'):  # 临时存储目录
+        if not os.path.isdir('./export_excel'):  # 导出结果存储目录
             os.makedirs('./export_excel')
         save_path = os.path.join('./export_excel', self.select_table + '.xls')
         head_list = ['学号', '姓名', '是否出勤', '出勤时间']
@@ -688,7 +828,7 @@ class ExportExcelDialog(QDialog):
             cursor.close()
             conn.close()
             text = 'Success!'
-            informativeText = '<b>课程{}签到表 导出成功!</b>'.format(self.select_table)
+            informativeText = '<b>课程{}签到表 导出成功! 目标路径：./export_excel</b>'.format(self.select_table)
             DataRecordUI.callDialog(QMessageBox.Information, text, informativeText, QMessageBox.Ok)
         except Exception as e:
             print(e)

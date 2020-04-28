@@ -4,6 +4,7 @@ import dlib
 import pymysql
 import telegram
 import cv2
+import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, QRegExp, Qt
@@ -74,6 +75,7 @@ class DatabaseNotFoundError(FileNotFoundError):
 class CoreUI(QMainWindow):
     database = 'users'  # sqlite 数据库路径，存储学生信息文本
     trainingData = './recognizer/trainingData.yml'  # 训练数据路径【由数据录入时生成】
+    dlib_features_data = './dlib_128D_csv/features_all.csv'  # dlib人脸特征数据
     cap = cv2.VideoCapture()  # OpenCV获取视频源方法
     captureQueue = queue.Queue()  # 图像队列
     alarmQueue = queue.LifoQueue()  # 报警队列，后进先出
@@ -810,6 +812,35 @@ class FaceProcessingThread(QThread):
         for fid in fidsToDelete:
             faceTrackers.pop(fid, None)
 
+    @staticmethod
+    def cal_euclideean_dis(feature_A, feature_B):
+        feature_A = numpy.array(feature_A)
+        feature_B = numpy.array(feature_B)
+        dist = numpy.linalg.norm(feature_A - feature_B)
+        return dist
+
+    @staticmethod
+    def read_dlib_features_csv(reader):
+        all_stu_features = []
+        for row in range(0, reader.shape[0], 2):
+            one_stu_features = []
+            for col in range(len(reader.iloc[row + 1])):
+                one_stu_features.append(reader.iloc[row + 1][col])
+            stu_features = {'face_id': int(reader.iloc[row][0]), 'features': one_stu_features}
+            all_stu_features.append(stu_features)
+        return all_stu_features
+
+    def cal_best_match(self, features_in_cap, all_stu_features):
+        best_match_face_id = None
+        min_dist = 1
+        for item in all_stu_features:
+            face_id, features = item.get('face_id', 0), item.get('features',[])
+            dist = self.cal_euclideean_dis(features_in_cap, features)
+            if dist < min_dist:
+                best_match_face_id = face_id
+                min_dist = dist
+        return best_match_face_id, min_dist
+
     # OpenCV线程运行
     def run(self):
         # 遇到的坑：因为FaceProcess在初始化的时候才认为准备running，而FaceProcess不running就不会有处理过的帧进入队列
@@ -821,6 +852,8 @@ class FaceProcessingThread(QThread):
 
         # 人脸跟踪器字典初始化
         faceTrackers = dict()
+        all_stu_features = []
+
 
         isTrainingDataLoaded = False  # 预加载训练数据标记，检查一次过后即可不检查
         isDbConnected = False  # 预连接数据库标记，连接一次后即可只检查标记
@@ -828,10 +861,14 @@ class FaceProcessingThread(QThread):
         while self.isRunning and CoreUI.cap.isOpened():
             ret, frame = CoreUI.cap.read()  # 从摄像头捕获帧
 
-            # 预加载数据文件
+            # 预加载识别数据
             if not isTrainingDataLoaded and os.path.isfile(CoreUI.trainingData):  # 训练数据
                 recognizer = cv2.face.LBPHFaceRecognizer_create()  # LBPH人脸识别对象
                 recognizer.read(CoreUI.trainingData)  # 读取训练数据
+                if os.path.exists(CoreUI.dlib_features_data):
+                    csv_reader = pd.read_csv(CoreUI.dlib_features_data, header=None)
+                    all_stu_features = self.read_dlib_features_csv(csv_reader)
+
                 isTrainingDataLoaded = True
 
             if not isDbConnected:  # 学生信息数据库
@@ -1037,7 +1074,7 @@ class FaceProcessingThread(QThread):
                         # 找出特征点位置
                         shape = predictor_5(landmarks_frame, rect)
 
-                        # 绘制68个特征点
+                        # 绘制5个特征点
                         for i in range(5):
                             cv2.circle(realTimeFrame, (shape.part(i).x, shape.part(i).y), 1, (0, 0, 255), 2)
                             cv2.putText(realTimeFrame, str(i), (shape.part(i).x, shape.part(i).y),
@@ -1052,35 +1089,36 @@ class FaceProcessingThread(QThread):
                         # 人脸识别
                         if self.isFaceRecognizerEnabled:
                             # 蓝色识别框（RGB三通道色参数其实顺序是BGR）
-                            # cv2.rectangle(realTimeFrame, (left, top), (right, bottom), (232, 138, 30), 2)
                             cv2.rectangle(realTimeFrame, (left, top), (right, bottom), (232, 138, 30), 2)
                             # 预测函数，识别后返回face ID和差异程度，差异程度越小越相似
-                            # face_id, confidence = recognizer.predict(gray[top:bottom, left:right])
-                            face_id, confidence = recognizer.predict(gray[top:bottom, left:right])
+                            face_features = facerec.compute_face_descriptor(frame, shape)
+                            face_id, confidence = self.cal_best_match(face_features, all_stu_features)
                             logging.debug('face_id：{}，confidence：{}'.format(face_id, confidence))
 
                             if self.isDebugMode:  # 调试模式输出每帧识别信息
                                 CoreUI.logQueue.put('Debug -> face_id：{}，confidence：{}'.format(face_id, confidence))
 
-                            # 从数据库中获取识别人脸的身份信息
-                            try:
-                                cursor.execute("SELECT * FROM users WHERE face_id=%s", (face_id,))
-                                result = cursor.fetchall()
-                                if result:
-                                    stu_id = str(result[0][0])  # 学号
-                                    zh_name = result[0][2]  # 中文名
-                                    en_name = result[0][3]  # 英文名
-                                else:
-                                    raise Exception
-                            except Exception as e:
-                                logging.error('读取数据库异常，系统无法获取Face ID为{}的身份信息'.format(face_id))
-                                CoreUI.logQueue.put('Error：读取数据库异常，系统无法获取Face ID为{}的身份信息'.format(face_id))
-                                stu_id = ''
-                                zh_name = ''
-                                en_name = ''
 
                             # 若置信度评分小于置信度阈值，认为是可靠识别
-                            if confidence < self.confidenceThreshold:
+                            if confidence < 0.45:
+
+                                # 从数据库中获取识别人脸的身份信息
+                                try:
+                                    cursor.execute("SELECT * FROM users WHERE face_id=%s", (face_id,))
+                                    result = cursor.fetchall()
+                                    if result:
+                                        stu_id = str(result[0][0])  # 学号
+                                        zh_name = result[0][2]  # 中文名
+                                        en_name = result[0][3]  # 英文名
+                                    else:
+                                        raise Exception
+                                except Exception as e:
+                                    logging.error('读取数据库异常，系统无法获取Face ID为{}的身份信息'.format(face_id))
+                                    CoreUI.logQueue.put('Error：读取数据库异常，系统无法获取Face ID为{}的身份信息'.format(face_id))
+                                    stu_id = ''
+                                    zh_name = ''
+                                    en_name = ''
+
                                 isKnown = True
                                 if self.isPanalarmEnabled:  # 签到系统启动状态下执行
                                     stu_statu = self.attendance_list.get(stu_id, 0)
@@ -1101,7 +1139,7 @@ class FaceProcessingThread(QThread):
                                         CoreUI.attendance_queue.put(alarmSignal)  # 签到队列插入该信号
                                         logging.info('系统发出了新的签到信号')
                                 # 置信度标签
-                                cv2.putText(realTimeFrame, str(round(100 - confidence, 3)), (left - 5, bottom + 18),
+                                cv2.putText(realTimeFrame, str(round((1 - confidence) * 100, 4)), (left - 5, bottom + 18),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                                             (0, 255, 255), 1)
                                 # 蓝色英文名标签
@@ -1110,20 +1148,20 @@ class FaceProcessingThread(QThread):
                                 # 蓝色中文名标签
                                 realTimeFrame = cv2ImgAddText(realTimeFrame, zh_name, left - 5, top - 10, (0, 97, 255))
                             else:
-                                cv2.putText(realTimeFrame, str(round(100 - confidence, 3)), (left - 5, bottom + 18),
+                                cv2.putText(realTimeFrame, str(round((1 - confidence) * 100, 3)), (left - 5, bottom + 18),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                                             (0, 50, 255), 1)
                                 # 若置信度评分大于置信度阈值，该人脸可能是陌生人
                                 cv2.putText(realTimeFrame, 'unknown', (left - 5, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 1,
                                             (0, 0, 255), 2)
                                 # 若置信度评分超出自动报警阈值，触发报警信号
-                                if confidence > self.autoAlarmThreshold:
-                                    # 报警系统是否开启
-                                    if self.isPanalarmEnabled:  # 记录报警时间戳和当前帧
-                                        alarmSignal['timestamp'] = datetime.now().strftime('%Y%m%d%H%M%S')
-                                        alarmSignal['img'] = realTimeFrame
-                                        CoreUI.alarmQueue.put(alarmSignal)  # 报警队列插入该信号
-                                        logging.info('系统发出了未知人脸信号')
+                                # if confidence > 0.8:
+                                #     # 报警系统是否开启
+                                #     if self.isPanalarmEnabled:  # 记录报警时间戳和当前帧
+                                #         alarmSignal['timestamp'] = datetime.now().strftime('%Y%m%d%H%M%S')
+                                #         alarmSignal['img'] = realTimeFrame
+                                #         CoreUI.alarmQueue.put(alarmSignal)  # 报警队列插入该信号
+                                #         logging.info('系统发出了未知人脸信号')
 
                         # 帧数计数器
                         frameCounter += 1
@@ -1290,3 +1328,6 @@ if __name__ == '__main__':
     window = CoreUI()
     window.show()
     sys.exit(app.exec())
+
+
+# 出勤率分析折线图，选择课程签到表创建折线图

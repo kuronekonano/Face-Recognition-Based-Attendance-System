@@ -326,7 +326,7 @@ class DataRecordUI(QWidget):
                         raise RecordDisturbance
 
                     cv2.imwrite('{}/stu_{}/img.{}.jpg'.format(self.datasets, stu_id, self.faceRecordCount + 1),
-                                gray[y - 20:y + h + 20, x - 20:x + w + 20])  # 灰度图的人脸区域
+                                frame[y - 20:y + h + 20, x - 20:x + w + 20])  # 灰度图的人脸区域
                 except RecordDisturbance:
                     self.isFaceRecordEnabled = False
                     logging.error('检测到多张人脸或环境干扰')
