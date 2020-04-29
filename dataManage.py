@@ -179,6 +179,7 @@ class DataManageUI(QWidget):
 
         # print(txt)
 
+    # 数据库连接
     @staticmethod
     def connect_to_sql():
         conn = pymysql.connect(host='localhost',
@@ -251,6 +252,9 @@ class DataManageUI(QWidget):
             self.tableWidget.insertRow(row_index)  # 插入行
             for col_index, col_data in enumerate(row_data):  # 插入列
                 self.tableWidget.setItem(row_index, col_index, QTableWidgetItem(str(col_data)))  # 设置单元格文本
+            attendance_rate = row_data[11]/(row_data[10] if row_data[10] != 0 else 1) * 100
+            self.tableWidget.setItem(row_index, len(row_data), QTableWidgetItem(str(attendance_rate) + '%'))  # 设置单元格文本
+
         if self.CellChangeButton.text() == '禁用编辑':
             self.enable_write_table()
 
@@ -401,6 +405,7 @@ class DataManageUI(QWidget):
             finally:
                 conn.close()
 
+    # dlib人脸特征提取
     def train_by_dlib(self):
         try:
             if not os.path.isdir(self.datasets):
@@ -770,6 +775,7 @@ class ExportExcelDialog(QDialog):
             cursor.execute(sql_select)
             conn.commit()
             stu_data = cursor.fetchall()
+            attendance_cnt = 0
             if len(stu_data[0]) != self.StuCheckTable.columnCount():
                 text = 'Error!'
                 informativeText = '<b>表格格式不正确，请重新选择正确的签到表格。</b>'
@@ -779,9 +785,20 @@ class ExportExcelDialog(QDialog):
                 self.StuCheckTable.removeRow(0)
             for row_index, row_data in enumerate(stu_data):
                 self.StuCheckTable.insertRow(row_index)  # 插入行
+                if row_data[2] == 1:
+                    attendance_cnt += 1
                 for col_index, col_data in enumerate(row_data):  # 插入列
                     self.StuCheckTable.setItem(row_index, col_index, QTableWidgetItem(str(col_data)))  # 设置单元格文本
             self.export_pushButton.setEnabled(True)
+            attendance_rate = attendance_cnt / len(stu_data) * 100
+            if 90 > attendance_rate >= 60:
+                self.attendance_label.setText('<b>出勤率：{}%</b>'.format(attendance_rate))
+            elif attendance_rate < 60:
+                self.attendance_label.setText('<b>出勤率：<font color=red>{}%</font></b>'.format(attendance_rate))
+            elif 100 > attendance_rate >= 90:
+                self.attendance_label.setText('<b>出勤率：<font color=green>{}%</font></b>'.format(attendance_rate))
+            else:
+                self.attendance_label.setText('<b>出勤率：<font color=blue>{}%</font></b>'.format(attendance_rate))
         except FileNotFoundError:
             logging.error('系统找不到数据库表{}'.format(self.select_table))
         except Exception as e:
