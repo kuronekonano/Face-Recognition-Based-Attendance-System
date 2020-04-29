@@ -80,7 +80,6 @@ class CoreUI(QMainWindow):
     captureQueue = queue.Queue()  # 图像队列
     alarmQueue = queue.LifoQueue()  # 报警队列，后进先出
     attendance_queue = queue.Queue()
-    saveQueue = queue.Queue()  # 报警队列，后进先出
     logQueue = multiprocessing.Queue()  # 日志队列，用于同步所有功能多进程状态
     receiveLogSignal = pyqtSignal(str)  # LOG信号
 
@@ -229,9 +228,7 @@ class CoreUI(QMainWindow):
                 stu_id = self.create_class_dialog.AddStuTable.item(row, 0).text()  # 学号
                 cn_name = self.create_class_dialog.AddStuTable.item(row, 1).text()  # 姓名
                 sql_judge = 'select stu_id from `%s` where stu_id="%s"' % (self.class_name, stu_id)
-                cursor.execute(sql_judge)  # 重复插入判定
-                judge_id = cursor.fetchone()
-                if judge_id is None:
+                if not CoreUI.check_id_exists(cursor, sql_judge):
                     insert_sql = '''INSERT INTO `%s` (stu_id, cn_name) VALUES ("%s", "%s")''' % (
                         self.class_name, stu_id, cn_name)
                     cursor.execute(insert_sql)
@@ -372,15 +369,21 @@ class CoreUI(QMainWindow):
             writer.writerow(csv_head)
 
     @staticmethod
+    def check_id_exists(cursor, sql_judge):
+        cursor.execute(sql_judge)
+        judge_id = cursor.fetchone()
+        if judge_id is None:
+            return False
+        return True
+
+    @staticmethod
     def write_sql(class_name, stu_id, timestamp):
         # print(class_name, stu_id, timestamp)
         conn, cursor = connect_to_sql()
         try:
             if DataRecordUI.table_exists(cursor, class_name):  # 表格存在检测
                 sql_judge = 'select stu_id from `%s` where stu_id="%s"' % (class_name, stu_id)
-                cursor.execute(sql_judge)
-                judge_id = cursor.fetchone()
-                if judge_id is not None:  # 学生存在确认
+                if CoreUI.check_id_exists(cursor, sql_judge):  # 学生存在确认
                     update_sql = 'UPDATE `%s` SET attendance="%s", attendance_time="%s" WHERE stu_id="%s"' % (
                         class_name, 1, timestamp, stu_id)
                     cursor.execute(update_sql)
@@ -391,7 +394,7 @@ class CoreUI(QMainWindow):
             CoreUI.logQueue.put('Error：数据存储失败')
             print(e)
         else:
-            CoreUI.logQueue.put('Success：学生：{}完成签到！'.format(stu_id))
+            logging.info('Success：学生：{}完成签到！数据库存储完成'.format(stu_id))
         finally:
             cursor.close()
             conn.commit()
@@ -592,7 +595,7 @@ class RecieveAlarm(QThread):
             jobs_alarm = []
             jobs_confirm = []
             # print(self.alarmQueue.qsize())
-
+            # 陌生人预警
             if CoreUI.alarmQueue.qsize() > self.alarmSignalThreshold:  # 若报警信号触发超出既定计数，进行报警
                 if not os.path.isdir('./unknown'):  # 未知人员目录检查存在
                     os.makedirs('./unknown')
@@ -629,57 +632,64 @@ class RecieveAlarm(QThread):
                 with CoreUI.alarmQueue.mutex:  # 队列互斥锁
                     CoreUI.alarmQueue.queue.clear()  # 清空报警队列
 
+            # 签到确认
             if CoreUI.attendance_queue.qsize():
-                if not os.path.isdir('./attendance_snapshot'):  # 未知人员目录检查存在
+                if not os.path.isdir('./attendance_snapshot'):  # 截图目录
                     os.makedirs('./attendance_snapshot')
-                arrive_signal = CoreUI.attendance_queue.get()
 
-                timestamp, img = arrive_signal.get('timestamp'), arrive_signal.get('img')  # 获取签到时间戳、获取签到帧
-                cv2.imwrite('./attendance_snapshot/{}.jpg'.format(timestamp), img)  # 存储截图,命名为时间戳
-                logging.info('签到成功！')
-                CoreUI.logQueue.put('Info：有新的同学签到成功，签到确认系统已被激活')
-
-                # 签到响铃
-                # print('while running isBellEnabled:', self.isBellEnabled)
-                if self.isBellEnabled:
-                    p1 = multiprocessing.Process(target=CoreUI.bellProcess, args=(CoreUI.logQueue,))
-                    p1.start()  # 调用响铃进程
-                    jobs_confirm.append(p1)
-
-                # TelegramBot推送
-                # print('while running isTelegramBotPushEnabled:', self.isTelegramBotPushEnabled)
-                if self.isTelegramBotPushEnabled:
-                    if os.path.isfile('./attendance_snapshot/{}.jpg'.format(timestamp)):
-                        img = './attendance_snapshot/{}.jpg'.format(timestamp)
-                    else:
-                        img = None
-                    p2 = multiprocessing.Process(target=CoreUI.telegramBotPushProcess, args=(CoreUI.logQueue, img))
-                    p2.start()
-                    jobs_confirm.append(p2)
-
-                # 等待本轮报警结束
-                for p in jobs_confirm:
-                    p.join()
-
-                # 重置报警信号
-                with CoreUI.attendance_queue.mutex:  # 队列互斥锁
-                    CoreUI.attendance_queue.queue.clear()  # 清空签到队列
-
-            while CoreUI.saveQueue.qsize():
                 if not os.path.isdir('./attendance_csv'):  # 临时存储目录
                     os.makedirs('./attendance_csv')
-                last_attendance_signal = CoreUI.saveQueue.get()
+                arrive_signal = CoreUI.attendance_queue.get()
+
                 csv_path = os.path.join('./attendance_csv', self.core_ui.class_name + '.csv')
                 if not os.path.exists(csv_path):
                     CoreUI.create_csv(csv_path)  # 创建CSV文件
-                stu_id = last_attendance_signal.get('id')
-                zh_name = last_attendance_signal.get('name')
-                timestamp = last_attendance_signal.get('time')
-                csv_data = [stu_id, zh_name, timestamp]
-                CoreUI.write_csv(csv_path, csv_data)  # 写入CSV文件
-                CoreUI.write_sql(self.core_ui.class_name, stu_id, timestamp)
-                message = '{} {} 同学签到成功！'.format(stu_id, zh_name)
-                CoreUI.logQueue.put(message)
+
+                stu_id = arrive_signal.get('id')  # 学号
+                zh_name = arrive_signal.get('name')  # 姓名
+                timestamp = arrive_signal.get('time')  # 时间戳
+                img = arrive_signal.get('img')  # 获取签到时间戳、获取签到帧
+
+                sql_judge = 'select stu_id from `%s` where stu_id="%s"' % (self.core_ui.class_name, stu_id)
+                conn, cursor = connect_to_sql()
+                # 学生在签到表中才会签到
+                if CoreUI.check_id_exists(cursor, sql_judge):
+
+                    csv_data = [stu_id, zh_name, timestamp.strftime("%Y/%m/%d %H:%M:%S")]
+                    CoreUI.write_csv(csv_path, csv_data)  # 写入CSV文件
+                    CoreUI.write_sql(self.core_ui.class_name, stu_id, timestamp.strftime("%Y/%m/%d %H:%M:%S"))
+                    message = '{} {} 同学签到成功！'.format(stu_id, zh_name)
+                    CoreUI.logQueue.put(message)
+                    cv2.imwrite('./attendance_snapshot/{}.jpg'.format(timestamp.strftime('%Y%m%d%H%M%S')),
+                                img)  # 存储截图,命名为时间戳
+                    # logging.info('签到成功！')
+                    # CoreUI.logQueue.put('Info：有新的同学签到成功，签到确认系统已被激活')
+
+                    # 签到响铃
+                    # print('while running isBellEnabled:', self.isBellEnabled)
+                    if self.isBellEnabled:
+                        p1 = multiprocessing.Process(target=CoreUI.bellProcess, args=(CoreUI.logQueue,))
+                        p1.start()  # 调用响铃进程
+                        jobs_confirm.append(p1)
+
+                    # TelegramBot推送
+                    # print('while running isTelegramBotPushEnabled:', self.isTelegramBotPushEnabled)
+                    if self.isTelegramBotPushEnabled:
+                        if os.path.isfile('./attendance_snapshot/{}.jpg'.format(timestamp.strftime('%Y%m%d%H%M%S'))):
+                            img = './attendance_snapshot/{}.jpg'.format(timestamp.strftime('%Y%m%d%H%M%S'))
+                        else:
+                            img = None
+                        p2 = multiprocessing.Process(target=CoreUI.telegramBotPushProcess, args=(CoreUI.logQueue, img))
+                        p2.start()
+                        jobs_confirm.append(p2)
+
+                    # 等待本轮报警结束
+                    for p in jobs_confirm:
+                        p.join()
+
+                    # # 重置报警信号
+                    # with CoreUI.attendance_queue.mutex:  # 队列互斥锁
+                    #     CoreUI.attendance_queue.queue.clear()  # 清空签到队列
 
     def stop(self):
         self.isRunning = False
@@ -744,6 +754,7 @@ class FaceProcessingThread(QThread):
             self.panalarmCheckBox = False
             coreUI.statusBar().showMessage('签到系统：关闭')
 
+    # 启用haar+LBPH识别算法
     def enable_haar_faceCascade(self, coreUI):
         if coreUI.haar_faceTrackerCheckBox.isChecked():  # 检查haar人脸追踪复选框状态
             self.is_haar_faceCascade = True
@@ -800,6 +811,7 @@ class FaceProcessingThread(QThread):
         faces = haar_faceCascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))
         return faces
 
+    # 删除低质量目标追踪器
     @staticmethod
     def del_low_quality_face_tracker(faceTrackers, realTimeFrame):
         fidsToDelete = []
@@ -816,6 +828,7 @@ class FaceProcessingThread(QThread):
         for fid in fidsToDelete:
             faceTrackers.pop(fid, None)
 
+    # 计算特征点欧氏距离
     @staticmethod
     def cal_euclideean_dis(feature_A, feature_B):
         feature_A = numpy.array(feature_A)
@@ -823,6 +836,7 @@ class FaceProcessingThread(QThread):
         dist = numpy.linalg.norm(feature_A - feature_B)
         return dist
 
+    # 读取人脸特征数据
     @staticmethod
     def read_dlib_features_csv(reader):
         all_stu_features = []
@@ -834,11 +848,12 @@ class FaceProcessingThread(QThread):
             all_stu_features.append(stu_features)
         return all_stu_features
 
+    # 计算最佳匹配
     def cal_best_match(self, features_in_cap, all_stu_features):
         best_match_face_id = None
         min_dist = 1
         for item in all_stu_features:
-            face_id, features = item.get('face_id', 0), item.get('features',[])
+            face_id, features = item.get('face_id', 0), item.get('features', [])
             dist = self.cal_euclideean_dis(features_in_cap, features)
             if dist < min_dist:
                 best_match_face_id = face_id
@@ -857,7 +872,6 @@ class FaceProcessingThread(QThread):
         # 人脸跟踪器字典初始化
         faceTrackers = dict()
         all_stu_features = []
-
 
         isTrainingDataLoaded = False  # 预加载训练数据标记，检查一次过后即可不检查
         isDbConnected = False  # 预连接数据库标记，连接一次后即可只检查标记
@@ -941,7 +955,7 @@ class FaceProcessingThread(QThread):
                                 if self.isPanalarmEnabled:  # 签到系统启动状态下执行
                                     stu_statu = self.attendance_list.get(stu_id, 0)
                                     if stu_statu > 6:
-                                        realTimeFrame = cv2ImgAddText(realTimeFrame, '已签到',  _x + _w - 45, _y - 10,
+                                        realTimeFrame = cv2ImgAddText(realTimeFrame, '已签到', _x + _w - 45, _y - 10,
                                                                       (0, 97, 255))  # 帧签到状态标记
                                     elif stu_statu <= 5:
                                         # 连续帧识别判断，避免误识
@@ -949,14 +963,12 @@ class FaceProcessingThread(QThread):
                                     else:
                                         attendance_time = datetime.now()
                                         self.attendance_list[stu_id] = stu_statu + 1
-                                        csv_data = {
+                                        alarmSignal = {
                                             'id': stu_id,
                                             'name': zh_name,
-                                            'time': attendance_time.strftime("%Y/%m/%d %H:%M:%S"),
+                                            'time': attendance_time,
+                                            'img': realTimeFrame
                                         }
-                                        CoreUI.saveQueue.put(csv_data)
-                                        alarmSignal['timestamp'] = datetime.now().strftime('%Y%m%d%H%M%S')
-                                        alarmSignal['img'] = realTimeFrame
                                         CoreUI.attendance_queue.put(alarmSignal)  # 签到队列插入该信号
                                         logging.info('系统发出了新的签到信号')
                                 # 置信度标签
@@ -1105,7 +1117,6 @@ class FaceProcessingThread(QThread):
                             if self.isDebugMode:  # 调试模式输出每帧识别信息
                                 CoreUI.logQueue.put('Debug -> face_id：{}，confidence：{}'.format(face_id, confidence))
 
-
                             # 若置信度评分小于置信度阈值，认为是可靠识别
                             if confidence < 0.45:
 
@@ -1130,7 +1141,7 @@ class FaceProcessingThread(QThread):
                                 if self.isPanalarmEnabled:  # 签到系统启动状态下执行
                                     stu_statu = self.attendance_list.get(stu_id, 0)
                                     if stu_statu > 6:
-                                        realTimeFrame = cv2ImgAddText(realTimeFrame, '已签到',  right - 45, top - 10,
+                                        realTimeFrame = cv2ImgAddText(realTimeFrame, '已签到', right - 45, top - 10,
                                                                       (0, 97, 255))  # 帧签到状态标记
                                     elif stu_statu <= 5:
                                         # 连续帧识别判断，避免误识
@@ -1138,18 +1149,17 @@ class FaceProcessingThread(QThread):
                                     else:
                                         attendance_time = datetime.now()
                                         self.attendance_list[stu_id] = stu_statu + 1
-                                        csv_data = {
+                                        alarmSignal = {
                                             'id': stu_id,
                                             'name': zh_name,
-                                            'time': attendance_time.strftime("%Y/%m/%d %H:%M:%S"),
+                                            'time': attendance_time,
+                                            'img': realTimeFrame,
                                         }
-                                        CoreUI.saveQueue.put(csv_data)
-                                        alarmSignal['timestamp'] = datetime.now().strftime('%Y%m%d%H%M%S')
-                                        alarmSignal['img'] = realTimeFrame
                                         CoreUI.attendance_queue.put(alarmSignal)  # 签到队列插入该信号
                                         logging.info('系统发出了新的签到信号')
                                 # 置信度标签
-                                cv2.putText(realTimeFrame, str(round((1 - confidence) * 100, 4)), (left - 5, bottom + 18),
+                                cv2.putText(realTimeFrame, str(round((1 - confidence) * 100, 4)),
+                                            (left - 5, bottom + 18),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                                             (0, 255, 255), 1)
                                 # 蓝色英文名标签
@@ -1158,7 +1168,8 @@ class FaceProcessingThread(QThread):
                                 # 蓝色中文名标签
                                 realTimeFrame = cv2ImgAddText(realTimeFrame, zh_name, left - 5, top - 10, (0, 97, 255))
                             else:
-                                cv2.putText(realTimeFrame, str(round((1 - confidence) * 100, 3)), (left - 5, bottom + 18),
+                                cv2.putText(realTimeFrame, str(round((1 - confidence) * 100, 3)),
+                                            (left - 5, bottom + 18),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                                             (0, 50, 255), 1)
                                 # 若置信度评分大于置信度阈值，该人脸可能是陌生人
@@ -1338,6 +1349,5 @@ if __name__ == '__main__':
     window = CoreUI()
     window.show()
     sys.exit(app.exec())
-
 
 # 出勤率分析折线图，选择课程签到表创建折线图
