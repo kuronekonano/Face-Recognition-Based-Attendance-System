@@ -592,6 +592,7 @@ class RecieveAlarm(QThread):
             jobs_alarm = []
             jobs_confirm = []
             # print(self.alarmQueue.qsize())
+
             if CoreUI.alarmQueue.qsize() > self.alarmSignalThreshold:  # 若报警信号触发超出既定计数，进行报警
                 if not os.path.isdir('./unknown'):  # 未知人员目录检查存在
                     os.makedirs('./unknown')
@@ -633,8 +634,7 @@ class RecieveAlarm(QThread):
                     os.makedirs('./attendance_snapshot')
                 arrive_signal = CoreUI.attendance_queue.get()
 
-                timestamp, img = arrive_signal.get('timestamp'), arrive_signal.get('img')  # 获取报警时间戳、获取报警帧
-                # 疑似陌生人脸，截屏存档
+                timestamp, img = arrive_signal.get('timestamp'), arrive_signal.get('img')  # 获取签到时间戳、获取签到帧
                 cv2.imwrite('./attendance_snapshot/{}.jpg'.format(timestamp), img)  # 存储截图,命名为时间戳
                 logging.info('签到成功！')
                 CoreUI.logQueue.put('Info：有新的同学签到成功，签到确认系统已被激活')
@@ -663,7 +663,7 @@ class RecieveAlarm(QThread):
 
                 # 重置报警信号
                 with CoreUI.attendance_queue.mutex:  # 队列互斥锁
-                    CoreUI.attendance_queue.queue.clear()  # 清空报警队列
+                    CoreUI.attendance_queue.queue.clear()  # 清空签到队列
 
             while CoreUI.saveQueue.qsize():
                 if not os.path.isdir('./attendance_csv'):  # 临时存储目录
@@ -940,12 +940,15 @@ class FaceProcessingThread(QThread):
                                 isKnown = True
                                 if self.isPanalarmEnabled:  # 签到系统启动状态下执行
                                     stu_statu = self.attendance_list.get(stu_id, 0)
-                                    if stu_statu:
+                                    if stu_statu > 6:
                                         realTimeFrame = cv2ImgAddText(realTimeFrame, '已签到',  _x + _w - 45, _y - 10,
                                                                       (0, 97, 255))  # 帧签到状态标记
+                                    elif stu_statu <= 5:
+                                        # 连续帧识别判断，避免误识
+                                        self.attendance_list[stu_id] = stu_statu + 1
                                     else:
                                         attendance_time = datetime.now()
-                                        self.attendance_list[stu_id] = attendance_time.strftime('%H:%M:%S')
+                                        self.attendance_list[stu_id] = stu_statu + 1
                                         csv_data = {
                                             'id': stu_id,
                                             'name': zh_name,
@@ -1126,12 +1129,15 @@ class FaceProcessingThread(QThread):
                                 isKnown = True
                                 if self.isPanalarmEnabled:  # 签到系统启动状态下执行
                                     stu_statu = self.attendance_list.get(stu_id, 0)
-                                    if stu_statu:
+                                    if stu_statu > 6:
                                         realTimeFrame = cv2ImgAddText(realTimeFrame, '已签到',  right - 45, top - 10,
                                                                       (0, 97, 255))  # 帧签到状态标记
+                                    elif stu_statu <= 5:
+                                        # 连续帧识别判断，避免误识
+                                        self.attendance_list[stu_id] = stu_statu + 1
                                     else:
                                         attendance_time = datetime.now()
-                                        self.attendance_list[stu_id] = attendance_time.strftime('%H:%M:%S')
+                                        self.attendance_list[stu_id] = stu_statu + 1
                                         csv_data = {
                                             'id': stu_id,
                                             'name': zh_name,
