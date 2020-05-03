@@ -33,6 +33,7 @@ fontStyle = ImageFont.truetype(
     "微软雅黑Bold.ttf", 20, encoding="utf-8")  # 字体格式
 
 haar_faceCascade = cv2.CascadeClassifier('./haarcascades/haarcascade_frontalface_default.xml')  # haar级联分类器脸部捕获器
+haar_eyes_cascade = cv2.CascadeClassifier('./haarcascades/haarcascade_eye.xml')
 predictor_5 = dlib.shape_predictor('./shape_predictor_5_face_landmarks.dat')  # 5特征点模型
 predictor_68 = dlib.shape_predictor('./shape_predictor_68_face_landmarks.dat')  # 68特征点模型
 facerec = dlib.face_recognition_model_v1("dlib_face_recognition_resnet_model_v1.dat")  # 人脸识别器模型
@@ -809,6 +810,13 @@ class FaceProcessingThread(QThread):
             gray = cv2.equalizeHist(gray)
         # 分类器进行人脸侦测,返回结果face是一个list保存矩形x,y,h,w
         faces = haar_faceCascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))
+        # 1.image为输入的灰度图像
+        # 2.objects为得到被检测物体的矩形框向量组
+        # 3.scaleFactor为每一个图像尺度中的尺度参数，默认值为1.1。scale_factor参数可以决定两个不同大小的窗口扫描之间有多大的跳跃，
+        # 这个参数设置的大，则意味着计算会变快，但如果窗口错过了某个大小的人脸，则可能丢失物体。
+        # 4.minNeighbors参数为每一个级联矩形应该保留的邻近个数，默认为3。
+        # minNeighbors控制着误检测，默认值为3表明至少有3次重叠检测，我们才认为人脸确实存。
+        # 6.cvSize()指示寻找人脸的最小区域。设置这个参数过大，会以丢失小物体为代价减少计算量。
         return faces
 
     # 删除低质量目标追踪器
@@ -901,6 +909,9 @@ class FaceProcessingThread(QThread):
             if self.is_haar_faceCascade:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # 灰度图，改变颜色空间，实际上就是BGR三色2(to) 灰度GRAY
                 faces = self.find_faces_by_haar(frame)  # 分类器获取人脸
+                eyes = haar_eyes_cascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))
+                for (x, y, w, h) in eyes:
+                    cv2.rectangle(realTimeFrame, (x, y), (x + w, y + h), (150, 255, 30), 1)
 
                 # 为什么要用haar+dlib多目标追踪，因为haar每次只能识别一张人脸，多目标追踪器可以记录下每次新增的人脸，那么haar负责检测人脸，多目标追踪负责记录和同时追踪多个人脸
 
@@ -915,11 +926,6 @@ class FaceProcessingThread(QThread):
                     for (_x, _y, _w, _h) in faces:
 
                         isKnown = False
-
-                        # left = face_rects.left()
-                        # top = face_rects.top()
-                        # right = face_rects.right()
-                        # bottom = face_rects.bottom()
 
                         # 人脸识别
                         if self.isFaceRecognizerEnabled:
@@ -955,7 +961,7 @@ class FaceProcessingThread(QThread):
                                 if self.isPanalarmEnabled:  # 签到系统启动状态下执行
                                     stu_statu = self.attendance_list.get(stu_id, 0)
                                     if stu_statu > 6:
-                                        realTimeFrame = cv2ImgAddText(realTimeFrame, '已签到', _x + _w - 45, _y - 10,
+                                        realTimeFrame = cv2ImgAddText(realTimeFrame, '已识别', _x + _w - 45, _y - 10,
                                                                       (0, 97, 255))  # 帧签到状态标记
                                     elif stu_statu <= 5:
                                         # 连续帧识别判断，避免误识
@@ -1141,7 +1147,7 @@ class FaceProcessingThread(QThread):
                                 if self.isPanalarmEnabled:  # 签到系统启动状态下执行
                                     stu_statu = self.attendance_list.get(stu_id, 0)
                                     if stu_statu > 6:
-                                        realTimeFrame = cv2ImgAddText(realTimeFrame, '已签到', right - 45, top - 10,
+                                        realTimeFrame = cv2ImgAddText(realTimeFrame, '已识别', right - 45, top - 10,
                                                                       (0, 97, 255))  # 帧签到状态标记
                                     elif stu_statu <= 5:
                                         # 连续帧识别判断，避免误识
