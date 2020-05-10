@@ -736,7 +736,11 @@ class ExportExcelDialog(QDialog):
 
         self.select_table_pushButton.clicked.connect(self.select_table_show)
         self.export_pushButton.clicked.connect(self.export_to_excel)
+        self.DelpushButton.clicked.connect(self.del_table)
+        self.fresh_table_list()
 
+    # 刷新数据库表格
+    def fresh_table_list(self):
         conn, cursor = DataManageUI.connect_to_sql()
         table_list = self.get_sql_table(cursor)
         cursor.close()
@@ -775,7 +779,7 @@ class ExportExcelDialog(QDialog):
             cursor.execute(sql_select)
             conn.commit()
             stu_data = cursor.fetchall()
-            attendance_cnt = 0
+            attendance_cnt = 0  # 出席人数计数
             if len(stu_data[0]) != self.StuCheckTable.columnCount():
                 text = 'Error!'
                 informativeText = '<b>表格格式不正确，请重新选择正确的签到表格。</b>'
@@ -790,6 +794,7 @@ class ExportExcelDialog(QDialog):
                 for col_index, col_data in enumerate(row_data):  # 插入列
                     self.StuCheckTable.setItem(row_index, col_index, QTableWidgetItem(str(col_data)))  # 设置单元格文本
             self.export_pushButton.setEnabled(True)
+            self.DelpushButton.setEnabled(True)
             attendance_rate = attendance_cnt / len(stu_data) * 100
             if 90 > attendance_rate >= 60:
                 self.attendance_label.setText('<b>出勤率：{}%</b>'.format(attendance_rate))
@@ -852,6 +857,39 @@ class ExportExcelDialog(QDialog):
             text = 'Error!'
             informativeText = '<b>导出失败!</b>'
             DataRecordUI.callDialog(QMessageBox.Critical, text, informativeText, QMessageBox.Ok)
+
+    # 删除表格
+    def del_table(self):
+        self.select_table = self.show_sqlTable.selectedItems()[0].text()
+        text = '确定<font color=blue> 删除 </font>表格<font color=blue> {} </font> 吗？<font color=red>该操作不可逆！</font>'.format(
+            self.select_table)
+        informativeText = '<b>是否继续？</b>'
+        ret = DataManageUI.callDialog(QMessageBox.Warning, text, informativeText, QMessageBox.Yes | QMessageBox.No,
+                                      QMessageBox.No)
+
+        if ret == QMessageBox.Yes:
+            sql_del_table = 'DROP TABLE `%s`' % self.select_table
+            try:
+                conn, cursor = DataManageUI.connect_to_sql()
+
+                if not DataRecordUI.table_exists(cursor, self.select_table):
+                    raise FileNotFoundError
+                cursor.execute(sql_del_table)
+                conn.commit()
+                text = 'Success!'
+                informativeText = '<b>{} 签到表 已删除！</b>'.format(self.select_table)
+                DataRecordUI.callDialog(QMessageBox.Information, text, informativeText, QMessageBox.Ok)
+            except FileNotFoundError:
+                logging.error('系统找不到数据库表{}'.format(self.select_table))
+            except Exception as e:
+                print(e)
+                text = 'Error!'
+                informativeText = '<b>无法删除!</b>'
+                DataRecordUI.callDialog(QMessageBox.Critical, text, informativeText, QMessageBox.Ok)
+            else:
+                cursor.close()
+                conn.close()
+            self.fresh_table_list()
 
 
 if __name__ == '__main__':

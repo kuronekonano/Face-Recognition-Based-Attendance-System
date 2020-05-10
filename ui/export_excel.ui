@@ -74,6 +74,16 @@
               </widget>
              </item>
              <item>
+              <widget class="QPushButton" name="DelpushButton">
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="text">
+                <string>删除</string>
+               </property>
+              </widget>
+             </item>
+             <item>
               <widget class="QPushButton" name="export_pushButton">
                <property name="enabled">
                 <bool>false</bool>

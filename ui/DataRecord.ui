@@ -390,7 +390,7 @@
       </rect>
      </property>
      <property name="text">
-      <string>增加用户/修改用户资料</string>
+      <string>增加/修改学生信息</string>
      </property>
      <property name="autoDefault">
       <bool>false</bool>
@@ -552,9 +552,9 @@
     </property>
     <property name="geometry">
      <rect>
-      <x>380</x>
+      <x>418</x>
       <y>90</y>
-      <width>209</width>
+      <width>171</width>
       <height>28</height>
      </rect>
     </property>
@@ -570,12 +570,28 @@
      <rect>
       <x>30</x>
       <y>90</y>
-      <width>221</width>
+      <width>181</width>
       <height>28</height>
      </rect>
     </property>
     <property name="text">
      <string>开始采集人脸数据</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="ImportPersonButton">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>230</x>
+      <y>90</y>
+      <width>171</width>
+      <height>28</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>导入单人图片集</string>
     </property>
    </widget>
   </widget>

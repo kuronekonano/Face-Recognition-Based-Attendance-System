@@ -2,6 +2,7 @@
 # Author: kuronekonano <god772525182@gmail.com>
 # 人脸信息录入
 import re
+import string
 import time
 
 import cv2
@@ -20,6 +21,7 @@ import threading
 import os
 import sys
 import xlrd
+import random
 
 from datetime import datetime
 
@@ -111,6 +113,7 @@ class DataRecordUI(QWidget):
         self.ImagepathButton.clicked.connect(self.import_image_thread)  # 使用多线程实现图片导入
         self.isExcel_path_ready = False
         self.ExcelpathButton.clicked.connect(self.import_excel_data)
+        self.ImportPersonButton.clicked.connect(self.person_import_thread)
 
     @staticmethod
     def connect_to_sql():
@@ -122,6 +125,46 @@ class DataRecordUI(QWidget):
                                charset='utf8')
         cursor = conn.cursor()
         return conn, cursor
+
+    # 单人导入图片集【主线程】弃用
+    def import_person_imageset(self):
+        if self.isUserInfoReady:  # 学生信息确认
+            stu_id = self.userInfo.get('stu_id')
+            self.ImportPersonButton.setIcon(QIcon('./icons/success.png'))
+            image_paths = QFileDialog.getOpenFileNames(self, '选择图片',
+                                                       "./",
+                                                       'JEPG files(*.jpg);;PNG files(*.PNG)')
+            if not os.path.exists('{}/stu_{}'.format(self.datasets, stu_id)):
+                os.makedirs('{}/stu_{}'.format(self.datasets, stu_id))
+            image_paths = image_paths[0]
+            for index, path in enumerate(image_paths):
+                try:
+                    img = cv2.imread(path)
+                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # 灰度图
+                    faces = self.faceCascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))  # 分类器侦测人脸
+                    if len(faces) == 0:
+                        self.logQueue.put('图片{}中没有检测到人脸！'.format(path))
+                        continue
+                    for (x, y, w, h) in faces:
+                        if len(faces) > 1:
+                            raise RecordDisturbance
+                        cv2.imwrite('{}/stu_{}/img.{}-{}.jpg'.format(self.datasets, stu_id, index, ''.join(
+                            random.sample(string.ascii_letters + string.digits, 4))),
+                                    img[y - 20:y + h + 20, x - 20:x + w + 20])  # 灰度图的人脸区域
+                except RecordDisturbance:
+                    logging.error('检测到多张人脸或环境干扰')
+                    self.logQueue.put('Warning：检测到图片{}存在多张人脸或环境干扰，已忽略。'.format(path))
+                    continue
+                except Exception as e:
+                    logging.error('写入人脸图像文件到计算机过程中发生异常')
+                    self.logQueue.put('Error：无法保存人脸图像，导入该图片失败')
+                    print(e)
+            self.migrateToDbButton.setEnabled(True)  # 允许提交至数据库
+            self.isFaceDataReady = True
+        else:
+            self.ImportPersonButton.setIcon(QIcon('./icons/error.png'))
+            self.ImportPersonButton.setChecked(False)
+            self.logQueue.put('Error：操作失败，系统未检测到有效的用户信息')
 
     # 表格导入学生信息
     def import_excel_data(self):
@@ -175,10 +218,33 @@ class DataRecordUI(QWidget):
                                                         "./",
                                                         'JEPG files(*.jpg);;PNG files(*.PNG)')
         self.image_paths = self.image_paths[0]
-        progress_bar = ActionsImportImage(self)
+        if len(self.image_paths) != 0:
+            progress_bar = ActionsImportImage(self)
         print('import success!')
 
-    # 图片批量导入【主线程】
+    # 启用新线程 单人图片导入 使用进度条
+    def person_import_thread(self):
+        if self.isUserInfoReady:  # 学生信息确认
+            stu_id = self.userInfo.get('stu_id')
+            self.ImportPersonButton.setIcon(QIcon('./icons/success.png'))
+
+            image_paths = QFileDialog.getOpenFileNames(self, '选择图片',
+                                                       "./",
+                                                       'JEPG files(*.jpg);;PNG files(*.PNG)')
+            self.image_paths = image_paths[0]
+            if len(self.image_paths) != 0:
+                if not os.path.exists('{}/stu_{}'.format(self.datasets, stu_id)):
+                    os.makedirs('{}/stu_{}'.format(self.datasets, stu_id))
+                progress_bar = ActionsPersonImport(self)
+                self.migrateToDbButton.setEnabled(True)  # 允许提交至数据库
+                self.isFaceDataReady = True
+
+        else:
+            self.ImportPersonButton.setIcon(QIcon('./icons/error.png'))
+            self.ImportPersonButton.setChecked(False)
+            self.logQueue.put('Error：操作失败，系统未检测到有效的用户信息')
+
+    # 图片批量导入【主线程】弃用
     def import_images_data(self):
         image_paths = QFileDialog.getOpenFileNames(self, '选择图片',
                                                    "./",
@@ -318,6 +384,13 @@ class DataRecordUI(QWidget):
     def detectFace(self, frame):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # 灰度图
         faces = self.faceCascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))  # 分类器侦测人脸
+        # 1.image为输入的灰度图像
+        # 2.objects为得到被检测物体的矩形框向量组
+        # 3.scaleFactor为每一个图像尺度中的尺度参数，默认值为1.1。scale_factor参数可以决定两个不同大小的窗口扫描之间有多大的跳跃，
+        # 这个参数设置的大，则意味着计算会变快，但如果窗口错过了某个大小的人脸，则可能丢失物体。
+        # 4.minNeighbors参数为每一个级联矩形应该保留的邻近个数，默认为3。
+        # minNeighbors控制着误检测，默认值为3表明至少有3次重叠检测，我们才认为人脸确实存。
+        # 6.cvSize()指示寻找人脸的最小区域。设置这个参数过大，会以丢失小物体为代价减少计算量。
 
         stu_id = self.userInfo.get('stu_id')
 
@@ -604,6 +677,9 @@ class DataRecordUI(QWidget):
                 self.stuIDLineEdit.clear()
                 self.cnNameLineEdit.clear()
                 self.enNameLineEdit.clear()
+                self.MajorLineEdit.clear()
+                self.GradeLineEdit.clear()
+                self.ClassLineEdit.clear()
                 self.SexLineEdit.clear()
                 self.ProvinceLineEdit.clear()
                 self.NationLineEdit.clear()
@@ -729,7 +805,7 @@ class ImportImageThread(QThread):
         error_count = 0
         DataRecordUI.logQueue.put('正在读取图片数据...')
         for index, path in enumerate(self.data_record.image_paths):
-            bar = index / images_count * 100
+            bar = (index + 1) / images_count * 100
             self.progress_bar_signal.emit(bar)
             stu_id = os.path.split(path)[1].split('.')[0]
             # print(stu_id)
@@ -779,6 +855,81 @@ class ActionsImportImage(QDialog):
         if int(value + 0.5) >= 100:
             time.sleep(1)
             self.close()
+
+
+# 单人进度条
+class ActionsPersonImport(QDialog):
+
+    def __init__(self, datarecord):
+        super(ActionsPersonImport, self).__init__()
+        self.data_record = datarecord
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle('单人图片正在导入...')
+        self.progress = QProgressBar(self)
+        self.progress.setGeometry(0, 0, 300, 25)
+        self.progress.setMaximum(100)
+        self.image_thread = PersonImportThread(self.data_record)  # 导入图片线程实例
+        self.image_thread.progress_bar_signal.connect(self.onCountChanged)  # 信号槽函数绑定
+        self.image_thread.start()
+        self.exec()
+
+    def onCountChanged(self, value):
+        self.progress.setValue(int(value + 0.5))
+        if int(value + 0.5) >= 100:
+            time.sleep(1)
+            self.close()
+
+
+# 单人图片导入线程
+class PersonImportThread(QThread):
+    progress_bar_signal = pyqtSignal(float)
+
+    def __init__(self, DataRecordUI):
+        super(PersonImportThread, self).__init__()
+        self.data_record = DataRecordUI
+
+    def run(self) -> None:
+        images_count = len(self.data_record.image_paths)
+        error_count = 0
+        for index, path in enumerate(self.data_record.image_paths):
+            bar = (index + 1) / images_count * 100
+            self.progress_bar_signal.emit(bar)
+            # print(index, images_count, bar)
+            try:
+                img = cv2.imread(path)
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # 灰度图
+                faces = self.data_record.faceCascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))  # 分类器侦测人脸
+                if len(faces) == 0:
+                    DataRecordUI.logQueue.put('图片{}中没有检测到人脸！'.format(path))
+                    continue
+                for (x, y, w, h) in faces:
+                    if len(faces) > 1:
+                        raise RecordDisturbance
+                    cv2.imwrite('{}/stu_{}/img.{}-{}.jpg'.format(self.data_record.datasets,
+                                                                 self.data_record.userInfo.get('stu_id'), index,
+                                                                 ''.join(
+                                                                     random.sample(string.ascii_letters + string.digits,
+                                                                                   4))),
+                                img[y - 20:y + h + 20, x - 20:x + w + 20])  # 灰度图的人脸区域
+            except RecordDisturbance:
+                logging.error('检测到多张人脸或环境干扰')
+                DataRecordUI.logQueue.put('Warning：检测到图片{}存在多张人脸或环境干扰，已忽略。'.format(path))
+                error_count += 1
+                continue
+            except Exception as e:
+                logging.error('写入人脸图像文件到计算机过程中发生异常')
+                DataRecordUI.logQueue.put('Error：无法保存人脸图像，导入该图片失败')
+                error_count += 1
+                print(e)
+
+        text = '导入完成！' if error_count else '导入成功!'
+        informativeText = '<b>图片批量导入完成！其中导入失败 <font color=red>{}</font> 张图片。</b>'.format(error_count)
+        message_box = {'text': text, 'informativeText': informativeText}
+        DataRecordUI.logQueue.put(message_box)
+
+        print('OK')
 
 
 if __name__ == '__main__':
