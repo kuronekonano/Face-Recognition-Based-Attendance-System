@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>人脸识别考勤管理系统 - 数据管理端DataManage</string>
+   <string>人脸识别考勤管理系统 - 数据管理端</string>
   </property>
   <layout class="QHBoxLayout" name="horizontalLayout_3">
    <item>

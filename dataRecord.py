@@ -218,7 +218,7 @@ class DataRecordUI(QWidget):
                                                         "./",
                                                         'JEPG files(*.jpg);;PNG files(*.PNG)')
         self.image_paths = self.image_paths[0]
-        if len(self.image_paths) != 0:
+        if len(self.image_paths) != 0:  # 点击导入但是没有选择文件时不需启动线程
             progress_bar = ActionsImportImage(self)
         print('import success!')
 
@@ -232,7 +232,7 @@ class DataRecordUI(QWidget):
                                                        "./",
                                                        'JEPG files(*.jpg);;PNG files(*.PNG)')
             self.image_paths = image_paths[0]
-            if len(self.image_paths) != 0:
+            if len(self.image_paths) != 0:  # 点击导入但是没有选择文件时不需启动线程
                 if not os.path.exists('{}/stu_{}'.format(self.datasets, stu_id)):
                     os.makedirs('{}/stu_{}'.format(self.datasets, stu_id))
                 progress_bar = ActionsPersonImport(self)

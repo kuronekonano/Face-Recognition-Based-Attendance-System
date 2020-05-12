@@ -33,7 +33,8 @@ fontStyle = ImageFont.truetype(
     "微软雅黑Bold.ttf", 20, encoding="utf-8")  # 字体格式
 
 haar_faceCascade = cv2.CascadeClassifier('./haarcascades/haarcascade_frontalface_default.xml')  # haar级联分类器脸部捕获器
-haar_eyes_cascade = cv2.CascadeClassifier('./haarcascades/haarcascade_eye.xml')
+haar_eyes_cascade = cv2.CascadeClassifier('./haarcascades/haarcascade_eye.xml')  # 眼部识别
+haar_smile_cascade = cv2.CascadeClassifier('./haarcascades/haarcascade_smile.xml')  # 微笑识别
 predictor_5 = dlib.shape_predictor('./shape_predictor_5_face_landmarks.dat')  # 5特征点模型
 predictor_68 = dlib.shape_predictor('./shape_predictor_68_face_landmarks.dat')  # 68特征点模型
 facerec = dlib.face_recognition_model_v1("dlib_face_recognition_resnet_model_v1.dat")  # 人脸识别器模型
@@ -799,7 +800,7 @@ class FaceProcessingThread(QThread):
         # 执行直方图均衡化
         if self.isEqualizeHistEnabled:
             img = cv2.equalizeHist(img)
-        face_rects = dlib_detector(img, 0)
+        face_rects = dlib_detector(img, 0)  # 0表示检测次数，次数越多越准确，也约耗时
 
         return face_rects
 
@@ -809,7 +810,7 @@ class FaceProcessingThread(QThread):
         if self.isEqualizeHistEnabled:
             gray = cv2.equalizeHist(gray)
         # 分类器进行人脸侦测,返回结果face是一个list保存矩形x,y,h,w
-        faces = haar_faceCascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))
+        faces = haar_faceCascade.detectMultiScale(gray, 1.3, 7, minSize=(80, 80))
         # 1.image为输入的灰度图像
         # 2.objects为得到被检测物体的矩形框向量组
         # 3.scaleFactor为每一个图像尺度中的尺度参数，默认值为1.1。scale_factor参数可以决定两个不同大小的窗口扫描之间有多大的跳跃，
@@ -909,21 +910,34 @@ class FaceProcessingThread(QThread):
             if self.is_haar_faceCascade:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # 灰度图，改变颜色空间，实际上就是BGR三色2(to) 灰度GRAY
                 faces = self.find_faces_by_haar(frame)  # 分类器获取人脸
-                eyes = haar_eyes_cascade.detectMultiScale(gray, 1.3, 5, minSize=(90, 90))
-                for (x, y, w, h) in eyes:
-                    cv2.rectangle(realTimeFrame, (x, y), (x + w, y + h), (150, 255, 30), 1)
 
                 # 为什么要用haar+dlib多目标追踪，因为haar每次只能识别一张人脸，多目标追踪器可以记录下每次新增的人脸，那么haar负责检测人脸，多目标追踪负责记录和同时追踪多个人脸
 
                 # 人脸跟踪
                 # Reference：https://github.com/gdiepen/face-recognition
                 if self.isFaceTrackerEnabled:
+                    know_faces = set()
 
                     # 删除质量较低的跟踪器
                     self.del_low_quality_face_tracker(faceTrackers, realTimeFrame)
 
                     # 遍历所有侦测到的人脸坐标
                     for (_x, _y, _w, _h) in faces:
+
+                        # 微笑检测
+                        smiles_y = (_y + _h + _y) // 2
+                        smiles = haar_smile_cascade.detectMultiScale(gray[smiles_y:_y + _h, _x:_x + _w], 1.3, 10,
+                                                                     minSize=(10, 10))
+                        for (x, y, w, h) in smiles:
+                            cv2.rectangle(realTimeFrame, (_x + x, smiles_y + y), (_x + x + w, smiles_y + y + h),
+                                          (200, 50, 0), 1)
+                            break
+
+                        # 眼部检测
+                        eyes = haar_eyes_cascade.detectMultiScale(gray[_y:smiles_y, _x:_x + _w], 1.3, 10,
+                                                                  minSize=(40, 40))
+                        for (x, y, w, h) in eyes:
+                            cv2.rectangle(realTimeFrame, (_x + x, _y + y), (_x + x + w, _y + y + h), (150, 255, 30), 1)
 
                         isKnown = False
 
@@ -960,10 +974,10 @@ class FaceProcessingThread(QThread):
                                 isKnown = True
                                 if self.isPanalarmEnabled:  # 签到系统启动状态下执行
                                     stu_statu = self.attendance_list.get(stu_id, 0)
-                                    if stu_statu > 6:
+                                    if stu_statu > 9:
                                         realTimeFrame = cv2ImgAddText(realTimeFrame, '已识别', _x + _w - 45, _y - 10,
                                                                       (0, 97, 255))  # 帧签到状态标记
-                                    elif stu_statu <= 5:
+                                    elif stu_statu <= 8:
                                         # 连续帧识别判断，避免误识
                                         self.attendance_list[stu_id] = stu_statu + 1
                                     else:
@@ -986,6 +1000,11 @@ class FaceProcessingThread(QThread):
                                             (0, 97, 255), 2)
                                 # 蓝色中文名标签
                                 realTimeFrame = cv2ImgAddText(realTimeFrame, zh_name, _x - 5, _y - 10, (0, 97, 255))
+
+                                know_faces.add(stu_id)
+                                if self.isDebugMode:  # 调试模式输出每帧识别信息
+                                    print(know_faces)
+                                    print(self.attendance_list)
                             else:
                                 cv2.putText(realTimeFrame, str(round(100 - confidence, 3)), (_x - 5, _y + _h + 18),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.6,
@@ -1069,6 +1088,12 @@ class FaceProcessingThread(QThread):
                         # 图像/添加的文字/左上角坐标/字体/字体大小/颜色/字体粗细
                         cv2.putText(realTimeFrame, 'tracking...', (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255),
                                     1)
+                    del_list = []
+                    for stu_id, value in self.attendance_list.items():
+                        if stu_id not in know_faces and value <= 8:
+                            del_list.append(stu_id)
+                    for stu_id in del_list:
+                        self.attendance_list.pop(stu_id, 0)
 
             else:
                 # dlib人脸关键点识别,绿框
@@ -1076,7 +1101,7 @@ class FaceProcessingThread(QThread):
                 # print(face_rects, scores, idx)  # rectangles[[(281, 209) (496, 424)]] [0.07766452427949444] [4]
 
                 if self.isFaceTrackerEnabled:
-
+                    know_faces = set()
                     # 删除质量较低的跟踪器
                     # self.del_low_quality_face_tracker(faceTrackers, realTimeFrame)
 
@@ -1091,12 +1116,13 @@ class FaceProcessingThread(QThread):
                         bottom = rect.bottom()
 
                         # 绘制出侦测人臉的矩形范围,绿框
-                        cv2.rectangle(realTimeFrame, (left, top), (right, bottom), (0, 255, 0), 4, cv2.LINE_AA)
+                        cv2.rectangle(realTimeFrame, (left - 5, top - 5), (right + 5, bottom + 5), (0, 255, 0), 4,
+                                      cv2.LINE_AA)
 
                         # 给68特征点识别取得一个转换顏色的frame
                         landmarks_frame = cv2.cvtColor(realTimeFrame, cv2.COLOR_BGR2RGB)
 
-                        # 找出特征点位置
+                        # 找出特征点位置, 参数为转换色彩空间后的帧图像以及脸部位置
                         shape = predictor_5(landmarks_frame, rect)
 
                         # 绘制5个特征点
@@ -1146,10 +1172,10 @@ class FaceProcessingThread(QThread):
                                 isKnown = True
                                 if self.isPanalarmEnabled:  # 签到系统启动状态下执行
                                     stu_statu = self.attendance_list.get(stu_id, 0)
-                                    if stu_statu > 6:
+                                    if stu_statu > 7:
                                         realTimeFrame = cv2ImgAddText(realTimeFrame, '已识别', right - 45, top - 10,
                                                                       (0, 97, 255))  # 帧签到状态标记
-                                    elif stu_statu <= 5:
+                                    elif stu_statu <= 6:
                                         # 连续帧识别判断，避免误识
                                         self.attendance_list[stu_id] = stu_statu + 1
                                     else:
@@ -1173,6 +1199,11 @@ class FaceProcessingThread(QThread):
                                             (0, 97, 255), 2)
                                 # 蓝色中文名标签
                                 realTimeFrame = cv2ImgAddText(realTimeFrame, zh_name, left - 5, top - 10, (0, 97, 255))
+
+                                know_faces.add(stu_id)
+                                if self.isDebugMode:  # 调试模式输出每帧识别信息
+                                    print(know_faces)
+                                    print(self.attendance_list)
                             else:
                                 cv2.putText(realTimeFrame, str(round((1 - confidence) * 100, 3)),
                                             (left - 5, bottom + 18),
@@ -1256,7 +1287,12 @@ class FaceProcessingThread(QThread):
                     #     # 图像/添加的文字/左上角坐标/字体/字体大小/颜色/字体粗细
                     #     cv2.putText(realTimeFrame, 'tracking...', (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255),
                     #                 1)
-
+                    del_list = []
+                    for stu_id, value in self.attendance_list.items():
+                        if stu_id not in know_faces and value <= 6:
+                            del_list.append(stu_id)
+                    for stu_id in del_list:
+                        self.attendance_list.pop(stu_id, 0)
             captureData['originFrame'] = frame
             captureData['realTimeFrame'] = realTimeFrame
             CoreUI.captureQueue.put(captureData)

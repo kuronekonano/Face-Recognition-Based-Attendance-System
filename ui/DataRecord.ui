@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>OpenCV Face Recognition System - DataRecord</string>
+   <string>人脸识别考勤管理系统 - 数据录入端</string>
   </property>
   <widget class="QGroupBox" name="faceRecordGroupBox">
    <property name="geometry">

@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>OpenCV Face Recognition System - Core</string>
+   <string>人脸识别考勤管理系统 - 考勤监控端</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <widget class="QGroupBox" name="faceRecognizerSettingsLogGroupBox">
@@ -531,7 +531,7 @@
       </font>
      </property>
      <property name="text">
-      <string>基于视频人脸识别的考勤管理系统</string>
+      <string>基于人脸识别的上课考勤管理系统</string>
      </property>
      <property name="alignment">
       <set>Qt::AlignCenter</set>
