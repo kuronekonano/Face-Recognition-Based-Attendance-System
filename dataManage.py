@@ -252,7 +252,7 @@ class DataManageUI(QWidget):
             self.tableWidget.insertRow(row_index)  # 插入行
             for col_index, col_data in enumerate(row_data):  # 插入列
                 self.tableWidget.setItem(row_index, col_index, QTableWidgetItem(str(col_data)))  # 设置单元格文本
-            attendance_rate = row_data[11]/(row_data[10] if row_data[10] != 0 else 1) * 100
+            attendance_rate = round(row_data[11]/(row_data[10] if row_data[10] != 0 else 1), 5) * 100
             self.tableWidget.setItem(row_index, len(row_data), QTableWidgetItem(str(attendance_rate) + '%'))  # 设置单元格文本
 
         if self.CellChangeButton.text() == '禁用编辑':
@@ -606,13 +606,6 @@ class TrainData(QThread):
         return gray[y:y + w, x:x + h], faces[0]
 
 
-# TODO: 将train单独出现一个线程来跑。   写dlib的train并存储到CSV文件中新建文件夹保存CSV文件，文件夹中每个人单独作为一个CSV？或者.yml也可以这样改，不过
-# 非常占用空间，读取也需要时间。但是删除和增加可以分别管理。 可以接受删除学生时不删除人脸，但增加学生时CSV尽量追加写入，而.yml需要全部重新训练
-# 识别模块需要加入读取CSV训练数据，遍历所有人脸数据计算欧氏距离，然后输出结果。不知道准确度和速度
-# 计算出勤率，导出表格（导出后可以计算单次课堂的出勤率），接入API，出勤率可以选择学生，创建班级，输入总次数，计算单个人整学期出勤率，以及全班平均出勤率
-# 触发器记录单个学生签到总次数
-
-
 # LBPH进度条
 class ActionsTrainByDlib(QDialog):
     """
@@ -768,7 +761,10 @@ class ExportExcelDialog(QDialog):
 
     # 选择表格并预览内容
     def select_table_show(self):
+        if not self.show_sqlTable.selectedItems():
+            return
         self.select_table = self.show_sqlTable.selectedItems()[0].text()
+
         # print(select_table)
         try:
             conn, cursor = DataManageUI.connect_to_sql()

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # Author: kuronekonano <god772525182@gmail.com>
+import string
+import random
+
 import dlib
 import pymysql
 import telegram
@@ -291,8 +294,6 @@ class CoreUI(QMainWindow):
                 self.realTimeCaptureLabel.clear()
                 self.realTimeCaptureLabel.setText('<font color=red>摄像头未开启</font>')
                 self.startWebcamButton.setText('打开摄像头')
-                # self.startWebcamButton.setText('摄像头已关闭')  # 当存在报警线程时启用
-                # self.startWebcamButton.setEnabled(False)
                 self.startWebcamButton.setIcon(QIcon())
                 self.captureQueue.queue.clear()
 
@@ -688,7 +689,8 @@ class RecieveAlarm(QThread):
                     # 等待本轮报警结束
                     for p in jobs_confirm:
                         p.join()
-
+                    # join()方法可以等待子进程结束后再继续往下运行(更准确地说，在当前位置阻塞主进程，
+                    # 带执行join（）的进程结束后再继续执行主进程)，通常用于进程间的同步。
                     # # 重置报警信号
                     # with CoreUI.attendance_queue.mutex:  # 队列互斥锁
                     #     CoreUI.attendance_queue.queue.clear()  # 清空签到队列
@@ -1170,6 +1172,10 @@ class FaceProcessingThread(QThread):
                                     en_name = ''
 
                                 isKnown = True
+
+                                # 蓝色中文名标签
+                                realTimeFrame = cv2ImgAddText(realTimeFrame, zh_name, left - 5, top - 10, (0, 97, 255))
+
                                 if self.isPanalarmEnabled:  # 签到系统启动状态下执行
                                     stu_statu = self.attendance_list.get(stu_id, 0)
                                     if stu_statu > 7:
@@ -1197,8 +1203,6 @@ class FaceProcessingThread(QThread):
                                 # 蓝色英文名标签
                                 cv2.putText(realTimeFrame, en_name, (left - 5, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 1,
                                             (0, 97, 255), 2)
-                                # 蓝色中文名标签
-                                realTimeFrame = cv2ImgAddText(realTimeFrame, zh_name, left - 5, top - 10, (0, 97, 255))
 
                                 know_faces.add(stu_id)
                                 if self.isDebugMode:  # 调试模式输出每帧识别信息
