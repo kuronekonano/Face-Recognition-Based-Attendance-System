@@ -254,6 +254,7 @@ class CoreUI(QMainWindow):
 
         if not self.panalarmCheckBox.isEnabled():
             self.panalarmCheckBox.setEnabled(True)  # 签到系统启用
+            self.faceProcessingThread.get_stu_num(row_num)
 
     # 是否使用外接摄像头
     def useExternalCamera(self, useExternalCameraCheckBox):
@@ -720,6 +721,11 @@ class FaceProcessingThread(QThread):
         self.is_haar_faceCascade = False  # Haar级联分类器识别
 
         self.attendance_list = dict()  # 签到名单
+        self.stu_num = 0
+        self.attendance_num = 0
+
+    def get_stu_num(self, stu_num):
+        self.stu_num = stu_num
 
     # 是否开启人脸跟踪
     def enableFaceTracker(self, coreUI):
@@ -1138,6 +1144,8 @@ class FaceProcessingThread(QThread):
                         # 图像/添加的文字/左上角坐标/字体/字体大小/颜色/字体粗细
                         cv2.putText(realTimeFrame, 'tracking...', (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0),
                                     1)
+                        cv2.putText(realTimeFrame, 'Person Count: {}/{}'.format(self.attendance_num, self.stu_num),
+                                    (420, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (160, 0, 155), 2)
 
                         # 人脸识别
                         if self.isFaceRecognizerEnabled:
@@ -1194,6 +1202,7 @@ class FaceProcessingThread(QThread):
                                             'img': realTimeFrame,
                                         }
                                         CoreUI.attendance_queue.put(alarmSignal)  # 签到队列插入该信号
+                                        self.attendance_num += 1
                                         logging.info('系统发出了新的签到信号')
                                 # 置信度标签
                                 cv2.putText(realTimeFrame, str(round((1 - confidence) * 100, 4)),
@@ -1204,7 +1213,7 @@ class FaceProcessingThread(QThread):
                                 cv2.putText(realTimeFrame, en_name, (left - 5, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 1,
                                             (0, 97, 255), 2)
 
-                                know_faces.add(stu_id)
+                                know_faces.add(stu_id)  # 连续帧识别加入当前帧存在的人脸
                                 if self.isDebugMode:  # 调试模式输出每帧识别信息
                                     print(know_faces)
                                     print(self.attendance_list)
